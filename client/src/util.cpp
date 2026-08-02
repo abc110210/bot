@@ -1,9 +1,9 @@
 #include "util.h"
 
 #include <bcrypt.h>
-#include <iphlpapi.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>   // 必须在 winsock2.h 之后，否则 IP_ADAPTER_ADDRESSES 等类型未定义
 #include <cwctype>
 #include <cstdio>
 #include <ctime>
@@ -392,7 +392,7 @@ std::wstring LastErrorText(DWORD code) {
 
     std::wstring text;
     if (n && msg) {
-        text = Trim(std::wstring(msg, n));
+        text = util::Trim(std::wstring(msg, n));
     }
     if (msg) ::LocalFree(msg);
 

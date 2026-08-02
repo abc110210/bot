@@ -323,6 +323,9 @@ void UpdatePwdHint() {
         SetPwdHint(2, L"✗ 需 4~24 位字母或数字（仅限 A-Z a-z 0-9）");
 }
 
+// 前向声明：FilterPasswordEdit 内部会调用，定义在下方
+void RefreshButtons();
+
 // 实时过滤密码框：仅保留字母数字、最长 24 位
 void FilterPasswordEdit() {
     HWND h = g_hPwdEdit;
@@ -924,9 +927,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         ::ScreenToClient(hwnd, &pt);
         RECT rc{};
         ::GetClientRect(hwnd, &rc);
+        RECT cr = CloseRect(rc.right);
+        RECT mr = MinRect(rc.right);
         if (pt.y < g_titleH) {
-            if (::PtInRect(&CloseRect(rc.right), &pt)) return HTCLIENT;
-            if (::PtInRect(&MinRect(rc.right), &pt))   return HTCLIENT;
+            if (::PtInRect(&cr, pt)) return HTCLIENT;
+            if (::PtInRect(&mr, pt))   return HTCLIENT;
             return HTCAPTION;
         }
         break;
@@ -936,11 +941,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
         RECT rc{};
         ::GetClientRect(hwnd, &rc);
-        if (::PtInRect(&CloseRect(rc.right), &pt)) {
+        RECT cr = CloseRect(rc.right);
+        RECT mr = MinRect(rc.right);
+        if (::PtInRect(&cr, pt)) {
             ::SendMessageW(hwnd, WM_CLOSE, 0, 0);
             return 0;
         }
-        if (::PtInRect(&MinRect(rc.right), &pt)) {
+        if (::PtInRect(&mr, pt)) {
             ::ShowWindow(hwnd, SW_MINIMIZE);
             return 0;
         }
@@ -951,10 +958,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
         RECT rc{};
         ::GetClientRect(hwnd, &rc);
-        const bool ch = ::PtInRect(&CloseRect(rc.right), &pt) != FALSE;
-        const bool mh = ::PtInRect(&MinRect(rc.right), &pt) != FALSE;
-        if (ch != g_closeHot) { g_closeHot = ch; ::InvalidateRect(hwnd, &CloseRect(rc.right), FALSE); }
-        if (mh != g_minHot)   { g_minHot   = mh; ::InvalidateRect(hwnd, &MinRect(rc.right), FALSE); }
+        RECT cr = CloseRect(rc.right);
+        RECT mr = MinRect(rc.right);
+        const bool ch = ::PtInRect(&cr, pt) != FALSE;
+        const bool mh = ::PtInRect(&mr, pt) != FALSE;
+        if (ch != g_closeHot) { g_closeHot = ch; ::InvalidateRect(hwnd, &cr, FALSE); }
+        if (mh != g_minHot)   { g_minHot   = mh; ::InvalidateRect(hwnd, &mr, FALSE); }
         if (!g_titleTracking) {
             TRACKMOUSEEVENT tme{ sizeof(tme) };
             tme.dwFlags = TME_LEAVE;
@@ -967,8 +976,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_MOUSELEAVE:
         g_titleTracking = false;
-        if (g_closeHot) { g_closeHot = false; RECT rc{}; ::GetClientRect(hwnd, &rc); ::InvalidateRect(hwnd, &CloseRect(rc.right), FALSE); }
-        if (g_minHot)   { g_minHot   = false; RECT rc{}; ::GetClientRect(hwnd, &rc); ::InvalidateRect(hwnd, &MinRect(rc.right), FALSE); }
+        if (g_closeHot) { g_closeHot = false; RECT rc{}; ::GetClientRect(hwnd, &rc); RECT cr = CloseRect(rc.right); ::InvalidateRect(hwnd, &cr, FALSE); }
+        if (g_minHot)   { g_minHot   = false; RECT rc{}; ::GetClientRect(hwnd, &rc); RECT mr = MinRect(rc.right); ::InvalidateRect(hwnd, &mr, FALSE); }
         return 0;
 
     case WM_COMMAND: {

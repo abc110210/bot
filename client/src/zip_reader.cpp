@@ -1,6 +1,7 @@
 #include "zip_reader.h"
 #include "deflate.h"
 #include "util.h"
+#include "inflate.h"   // inflate::Decompress —— DEFLATE 解压
 
 #include <algorithm>
 #include <vector>
@@ -107,7 +108,7 @@ bool CreateParentDirs(const std::wstring& filePath) {
 
 // 把内部条目名映射到目标目录；剥离前缀 "saves/" 或 "saves\\"
 // 拒绝「..」以防穿越。isRoot = 内部名就是被剥离后的根（如 "saves/"）。
-bool MapTarget(const std::wstring& targetDir, const std::wstring& nameUtf8,
+bool MapTarget(const std::wstring& targetDir, const std::string& nameUtf8,
                std::wstring& outPath, bool& isRoot) {
     std::wstring w = util::Utf8ToWide(nameUtf8);
     for (auto& c : w) if (c == L'/') c = L'\\';
