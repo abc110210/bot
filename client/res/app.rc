@@ -1,0 +1,57 @@
+// ---------------------------------------------------------------------------
+// 资源脚本：应用清单 + 版本信息
+//   注意：CMake 里已经关掉了链接器自动生成清单（/MANIFEST:NO），
+//         清单统一由这里嵌入，避免两份清单冲突报 c1010001
+// ---------------------------------------------------------------------------
+
+#include <windows.h>
+#include "../src/resource.h"
+
+/////////////////////////////////////////////////////////////////////////////
+// 应用清单
+/////////////////////////////////////////////////////////////////////////////
+IDR_APP_MANIFEST RT_MANIFEST "app.manifest"
+
+/////////////////////////////////////////////////////////////////////////////
+// 图标（可选）
+//   如果以后放了 res/app.ico，把下面这行的注释去掉即可，
+//   同时把 main.cpp 里的 LoadIconW(nullptr, IDI_APPLICATION)
+//   换成 LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APP_ICON))
+/////////////////////////////////////////////////////////////////////////////
+// IDI_APP_ICON ICON "app.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+// 版本信息
+/////////////////////////////////////////////////////////////////////////////
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS      VS_FF_DEBUG
+#else
+ FILEFLAGS      0x0L
+#endif
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"          // 中文（简体） + Unicode
+        BEGIN
+            VALUE "CompanyName",      "Hanbot"
+            VALUE "FileDescription",  "Hanbot 存档打包上传器"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "HanbotSavesUploader"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 Hanbot"
+            VALUE "OriginalFilename", "HanbotSavesUploader.exe"
+            VALUE "ProductName",      "Hanbot 存档打包上传器"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

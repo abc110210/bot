@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>双子匣 · Hanbot 存档</title>
+<style>
+  /* ============================================================
+     设计语言来源：futakire.com（浪漫双子恋爱喜剧动画官網）
+     移植策略：只借用其「高级感配方」——暖象牙底 + 柔粉/薰衣草渐变、
+     优雅留白、精致排版、细腻入场动效、不用 emoji。
+     不复制任何站点内容/素材，全部为原创界面。
+     ============================================================ */
+
+  :root {
+    --bg-0: #FAF5F2;          /* 暖象牙 */
+    --bg-1: #F7EAF1;          /* 柔粉晕 */
+    --bg-2: #EFEAF8;          /* 薰衣草晕 */
+    --card: rgba(255, 255, 255, 0.72);
+    --card-solid: #FFFBFD;
+    --ink: #3B2F3A;           /* 深紫炭 */
+    --ink-soft: #735F6E;
+    --ink-faint: #A2929C;
+    --line: rgba(120, 90, 110, 0.14);
+    --line-strong: rgba(120, 90, 110, 0.26);
+    --rose: #E8A6BC;
+    --rose-deep: #D98AAA;
+    --lav: #B9A7E2;
+    --lav-deep: #9F86D6;
+    --sky: #9FC6E8;
+    --ok: #7FB39A;
+    --warn: #E0A06A;
+    --err: #E08AA0;
+    --grad-upload: linear-gradient(135deg, #F3BACB 0%, #C6ABE9 100%);
+    --grad-download: linear-gradient(135deg, #A9CDE8 0%, #C6ABE9 100%);
+    --shadow-soft: 0 18px 50px -22px rgba(95, 60, 90, 0.45);
+    --shadow-btn: 0 10px 26px -10px rgba(175, 120, 160, 0.55);
+    --font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Outfit",
+            system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Code", Consolas,
+            "Microsoft YaHei", monospace;
+  }
+
+  [data-theme="dark"] {
+    --bg-0: #1C1722;
+    --bg-1: #271F2E;
+    --bg-2: #2C2233;
+    --card: rgba(46, 36, 52, 0.66);
+    --card-solid: #2A2130;
+    --ink: #F4EAF1;
+    --ink-soft: #C3B2BE;
+    --ink-faint: #8C7C88;
+    --line: rgba(255, 255, 255, 0.10);
+    --line-strong: rgba(255, 255, 255, 0.20);
+    --rose: #E8A6BC;
+    --lav: #B9A7E2;
+    --sky: #9FC6E8;
+    --grad-upload: linear-gradient(135deg, #E59BBA 0%, #B79AE6 100%);
+    --grad-download: linear-gradient(135deg, #93BEE2 0%, #B79AE6 100%);
+    --shadow-soft: 0 22px 60px -24px rgba(0, 0, 0, 0.7);
+    --shadow-btn: 0 12px 30px -12px rgba(180, 120, 170, 0.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    background:
+      radial-gradient(120% 90% at 12% 0%, var(--bg-1) 0%, transparent 55%),
+      radial-gradient(120% 90% at 95% 100%, var(--bg-2) 0%, transparent 55%),
+      var(--bg-0);
+    display: grid;
+    place-items: center;
+    padding: 28px 16px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.6s ease, color 0.4s ease;
+    overflow-x: hidden;
+  }
+
+  /* 漂浮柔光斑 —— 取自官網「氛围感」手法 */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .ambient span {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.5;
+    animation: drift 18s ease-in-out infinite;
+  }
+  .ambient span:nth-child(1) { width: 320px; height: 320px; left: -60px; top: -40px;
+    background: radial-gradient(circle, var(--rose), transparent 70%); }
+  .ambient span:nth-child(2) { width: 360px; height: 360px; right: -80px; bottom: -60px;
+    background: radial-gradient(circle, var(--lav), transparent 70%); animation-delay: -6s; }
+  .ambient span:nth-child(3) { width: 220px; height: 220px; right: 30%; top: 20%;
+    background: radial-gradient(circle, var(--sky), transparent 70%); animation-delay: -11s; opacity: 0.35; }
+
+  @keyframes drift {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(20px, -24px) scale(1.08); }
+  }
+
+  /* ===== 仿真原生窗口外壳（去掉浏览器味） ===== */
+  .window {
+    position: relative;
+    z-index: 1;
+    width: min(94vw, 480px);
+    background: var(--card);
+    backdrop-filter: blur(26px) saturate(160%);
+    -webkit-backdrop-filter: blur(26px) saturate(160%);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    box-shadow: var(--shadow-soft);
+    overflow: hidden;
+    animation: riseIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.35), transparent);
+  }
+  [data-theme="dark"] .titlebar { background: linear-gradient(180deg, rgba(255,255,255,0.06), transparent); }
+
+  .twin-mark { width: 22px; height: 22px; flex: none; }
+  .twin-mark circle { fill: none; stroke-width: 2; }
+  .twin-mark .c1 { stroke: var(--rose-deep); }
+  .twin-mark .c2 { stroke: var(--lav-deep); }
+
+  .titlebar .name {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    font-size: 14px;
+  }
+  .titlebar .sub {
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-left: 2px;
+  }
+  .titlebar .spacer { flex: 1; }
+
+  .win-btn {
+    width: 26px; height: 26px;
+    border: none; border-radius: 50%;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: background 0.2s ease, transform 0.15s ease;
+  }
+  .win-btn:hover { background: var(--line); transform: translateY(-1px); }
+  .win-btn:active { transform: scale(0.94); }
+  .win-btn svg { width: 14px; height: 14px; }
+
+  /* ===== 内容区 ===== */
+  .body { padding: 22px 22px 18px; }
+
+  .masthead { text-align: center; margin-bottom: 18px; animation: riseIn 0.7s 0.05s cubic-bezier(0.16,1,0.3,1) both; }
+  .masthead h1 {
+    margin: 0;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: linear-gradient(120deg, var(--rose-deep), var(--lav-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .masthead p {
+    margin: 7px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    letter-spacing: 0.05em;
+  }
+
+  .card {
+    background: var(--card-solid);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset;
+    animation: riseIn 0.7s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  .card:nth-of-type(1) { animation-delay: 0.10s; }
+  .card:nth-of-type(2) { animation-delay: 0.16s; }
+  .card:nth-of-type(3) { animation-delay: 0.22s; }
+
+  .field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+
+  /* 目录行 */
+  .path-row { display: flex; gap: 8px; align-items: center; }
+  .path-input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    padding: 10px 12px;
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ghost {
+    flex: none;
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--lav-deep);
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    padding: 9px 13px;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+  }
+  .ghost:hover { background: var(--bg-2); border-color: var(--lav); transform: translateY(-1px); }
+  .ghost:active { transform: scale(0.97); }
+
+  /* 密码框 */
+  .pwd-wrap { position: relative; display: flex; align-items: center; }
+  .pwd-wrap svg {
+    position: absolute; left: 13px;
+    width: 16px; height: 16px; color: var(--ink-faint);
+    pointer-events: none;
+  }
+  .pwd-input {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: 0.14em;
+    color: var(--ink);
+    padding: 12px 14px 12px 38px;
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    outline: none;
+    transition: border-color 0.22s ease, box-shadow 0.22s ease;
+  }
+  .pwd-input:focus {
+    border-color: var(--rose);
+    box-shadow: 0 0 0 4px rgba(232, 166, 188, 0.22);
+  }
+  .pwd-hint {
+    margin: 8px 2px 0;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .pwd-hint .count { font-family: var(--mono); }
+  .pwd-hint.bad { color: var(--err); }
+  .pwd-hint.ok { color: var(--ok); }
+
+  /* 双主按钮 */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .primary {
+    position: relative;
+    font-family: var(--font);
+    font-size: 14.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    padding: 14px 10px;
+    cursor: pointer;
+    background: var(--grad-upload);
+    box-shadow: var(--shadow-btn);
+    overflow: hidden;
+    transition: transform 0.18s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease, filter 0.2s ease;
+  }
+  .primary.download { background: var(--grad-download); }
+  .primary::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform 0.7s ease;
+  }
+  .primary:hover:not(:disabled) { transform: translateY(-2px); filter: saturate(1.08); }
+  .primary:hover:not(:disabled)::after { transform: translateX(120%); }
+  .primary:active:not(:disabled) { transform: scale(0.97); }
+  .primary:disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.5) opacity(0.5);
+    box-shadow: none;
+  }
+  .primary .lbl { position: relative; z-index: 1; }
+
+  /* 进度 */
+  .progress-card { display: none; }
+  .progress-card.show { display: block; }
+  .progress-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 9px;
+  }
+  .progress-head .stage { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .progress-head .pct { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+  .bar {
+    height: 7px; border-radius: 99px;
+    background: var(--bg-1);
+    overflow: hidden;
+  }
+  .bar > i {
+    display: block; height: 100%; width: 0%;
+    border-radius: 99px;
+    background: var(--grad-upload);
+    transition: width 0.35s cubic-bezier(0.16,1,0.3,1);
+    position: relative;
+  }
+  .bar > i::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent, rgba(255,255,255,0.5), transparent);
+    animation: shimmer 1.4s linear infinite;
+  }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+  /* 状态药丸 */
+  .status {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 600;
+    padding: 5px 12px; border-radius: 99px;
+    background: var(--bg-1); color: var(--ink-soft);
+    border: 1px solid var(--line);
+  }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
+  .status.ok { color: var(--ok); background: rgba(127,179,154,0.14); }
+  .status.ok .dot { background: var(--ok); }
+  .status.busy { color: var(--lav-deep); background: rgba(185,167,226,0.18); }
+  .status.busy .dot { background: var(--lav-deep); animation: pulse 1.1s ease-in-out infinite; }
+  .status.err { color: var(--err); background: rgba(224,138,160,0.16); }
+  .status.err .dot { background: var(--err); }
+  @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
+  /* 日志 / 结果 */
+  .log {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    height: 118px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log .ts { color: var(--ink-faint); }
+  .log .good { color: var(--ok); }
+  .log .bad { color: var(--err); }
+
+  .result-row { display: flex; gap: 8px; margin-top: 10px; }
+  .result {
+    flex: 1; min-width: 0;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--ink-soft);
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.04em;
+    margin-top: 4px;
+  }
+
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::after, *::before { animation: none !important; transition: none !important; }
+  }
+
+  /* 细滚动条 */
+  .log::-webkit-scrollbar { width: 7px; }
+  .log::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 99px; }
+</style>
+</head>
+<body>
+  <div class="ambient"><span></span><span></span><span></span></div>
+
+  <main class="window" role="application" aria-label="双子匣 Hanbot 存档管理器">
+    <!-- 仿真标题栏 -->
+    <div class="titlebar">
+      <svg class="twin-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <circle class="c1" cx="9.5" cy="12" r="6"/>
+        <circle class="c2" cx="14.5" cy="12" r="6"/>
+      </svg>
+      <span class="name">双子匣</span>
+      <span class="sub">Hanbot Saves</span>
+      <span class="spacer"></span>
+      <button class="win-btn" id="btnTheme" title="切换昼/夜" aria-label="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>
+        </svg>
+      </button>
+      <button class="win-btn" id="btnMin" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M5 12h14"/>
+        </svg>
+      </button>
+      <button class="win-btn" id="btnClose" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="body">
+      <header class="masthead">
+        <h1>把召唤师存档，温柔收好</h1>
+        <p>上传 · 加密 · 凭密码取回 —— 双子匣为你保管</p>
+      </header>
+
+      <!-- 目录 -->
+      <section class="card">
+        <label class="field-label">存档目录</label>
+        <div class="path-row">
+          <div class="path-input" id="pathInput" title="存档目录">未选择（点击「自动检测」）</div>
+          <button class="ghost" id="btnDetect">自动检测</button>
+          <button class="ghost" id="btnBrowse">手动选择</button>
+        </div>
+      </section>
+
+      <!-- 密码 -->
+      <section class="card">
+        <label class="field-label" for="pwd">取回密码</label>
+        <div class="pwd-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="11" width="16" height="9" rx="2"/>
+            <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+          </svg>
+          <input class="pwd-input" id="pwd" type="password" inputmode="latin"
+                 autocomplete="off" placeholder="4–24 位字母或数字" maxlength="24" />
+        </div>
+        <div class="pwd-hint" id="pwdHint">
+          <span>用于加密与取回，仅你可知</span>
+          <span class="count" id="pwdCount">0 / 24</span>
+        </div>
+      </section>
+
+      <!-- 双主按钮 -->
+      <section class="card">
+        <div class="actions">
+          <button class="primary" id="btnUpload" disabled>
+            <span class="lbl">上传存档</span>
+          </button>
+          <button class="primary download" id="btnDownload" disabled>
+            <span class="lbl">下载取回</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 进度 -->
+      <section class="card progress-card" id="progressCard">
+        <div class="progress-head">
+          <span class="stage" id="stageText">准备中…</span>
+          <span class="pct" id="pctText">0%</span>
+        </div>
+        <div class="bar"><i id="barFill"></i></div>
+        <div style="margin-top:12px;">
+          <span class="status" id="statusPill"><span class="dot"></span><span id="statusText">就绪</span></span>
+        </div>
+      </section>
+
+      <!-- 日志 / 结果 -->
+      <section class="card">
+        <label class="field-label">运行日志</label>
+        <div class="log" id="log" aria-live="polite"></div>
+        <div class="result-row">
+          <div class="result" id="result">结果将显示在这里</div>
+          <button class="ghost" id="btnCopy">复制</button>
+        </div>
+      </section>
+
+      <p class="footer">双子匣 · 本地打包加密，直传云端 · 数据由你的密码守护</p>
+    </div>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===== 状态 =====
+  var dirValid = false;       // 目录有效（含 hanbot_core.ini）
+  var dirExists = false;      // 目录存在（下载需要）
+  var pwdOk = false;
+  var busy = false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pwd = $("pwd");
+  var pwdHint = $("pwdHint");
+  var pwdCount = $("pwdCount");
+  var pathInput = $("pathInput");
+  var btnUpload = $("btnUpload");
+  var btnDownload = $("btnDownload");
+  var progressCard = $("progressCard");
+  var barFill = $("barFill");
+  var stageText = $("stageText");
+  var pctText = $("pctText");
+  var statusPill = $("statusPill");
+  var statusText = $("statusText");
+  var log = $("log");
+  var result = $("result");
+
+  // ===== 主题（持久化） =====
+  try {
+    var saved = localStorage.getItem("twinbox-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+  $("btnTheme").addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    var next = cur === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("twinbox-theme", next); } catch (e) {}
+  });
+  // WebView2 中这些由 C++ 外壳接管；原型里给个示意
+  $("btnMin").addEventListener("click", function () { window.dispatchEvent(new Event("twinbox:minimize")); });
+  $("btnClose").addEventListener("click", function () { window.dispatchEvent(new Event("twinbox:close")); });
+
+  // ===== 工具 =====
+  function logLine(text, cls) {
+    var t = new Date();
+    var ts = ("0"+t.getHours()).slice(-2)+":"+("0"+t.getMinutes()).slice(-2)+":"+("0"+t.getSeconds()).slice(-2);
+    var div = document.createElement("div");
+    div.innerHTML = '<span class="ts">['+ts+']</span> ' + (cls ? '<span class="'+cls+'">'+text+'</span>' : text);
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+  function setStatus(text, kind) {
+    statusText.textContent = text;
+    statusPill.className = "status" + (kind ? " " + kind : "");
+  }
+  function refreshActions() {
+    btnUpload.disabled = busy || !dirValid || !pwdOk;
+    btnDownload.disabled = busy || !dirExists || !pwdOk;
+  }
+  function showProgress(show) { progressCard.classList.toggle("show", show); }
+
+  // ===== 密码：实时过滤（仅字母数字）+ 截断 24 =====
+  pwd.addEventListener("input", function () {
+    var raw = pwd.value;
+    var cleaned = raw.replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
+    if (cleaned !== raw) pwd.value = cleaned;
+    var len = cleaned.length;
+    pwdCount.textContent = len + " / 24";
+    pwdOk = len >= 4 && len <= 24;
+    pwdHint.classList.remove("bad", "ok");
+    if (len === 0) {
+      pwdHint.firstElementChild.textContent = "用于加密与取回，仅你可知";
+    } else if (!pwdOk) {
+      pwdHint.classList.add("bad");
+      pwdHint.firstElementChild.textContent = len < 4 ? "至少 4 位哦" : "已截断至 24 位";
+    } else {
+      pwdHint.classList.add("ok");
+      pwdHint.firstElementChild.textContent = "密码格式正确 ✓";
+    }
+    refreshActions();
+  });
+
+  // ===== 目录：原型中模拟检测/选择 =====
+  $("btnDetect").addEventListener("click", function () {
+    if (busy) return;
+    logLine("自动检测 League of Legends\\saves …");
+    // 真实逻辑在 C++ 端 lolfind::HasMarker；这里模拟结果
+    setTimeout(function () {
+      pathInput.textContent = "C:\\Games\\LoL\\saves";
+      dirValid = true; dirExists = true;
+      logLine("已定位存档目录（含 hanbot_core.ini）", "good");
+      refreshActions();
+    }, 600);
+  });
+  $("btnBrowse").addEventListener("click", function () {
+    if (busy) return;
+    // 真实逻辑用系统文件夹选择对话框
+    pathInput.textContent = "D:\\MyDocs\\LoL_saves";
+    dirValid = true; dirExists = true;
+    logLine("已选择目录");
+    refreshActions();
+  });
+
+  // ===== 复制结果 =====
+  $("btnCopy").addEventListener("click", function () {
+    var txt = result.textContent;
+    if (navigator.clipboard && txt !== "结果将显示在这里") {
+      navigator.clipboard.writeText(txt).then(function () { logLine("结果已复制到剪贴板"); });
+    }
+  });
+
+  // ===== 模拟一次上传/下载流程（展示动效与状态机） =====
+  // 真实接入：调用 C++ 暴露的 Run(dir, pwd) / Download(dir, pwd)
+  function simulate(kind) {
+    if (busy) return;
+    busy = true; refreshActions(); showProgress(true);
+    setStatus(kind === "up" ? "上传中" : "取回中", "busy");
+    var steps = kind === "up"
+      ? [["打包 saves 目录…", 18], ["本地加密（ZipCrypto）…", 42], ["申请上传凭证…", 60],
+         ["直传七牛云…", 88], ["登记密码 ↔ 压缩包…", 100]]
+      : [["凭密码换取下载链接…", 25], ["下载加密压缩包…", 60],
+         ["解密并覆盖解压…", 92], ["完成", 100]];
+    var i = 0;
+    function tick() {
+      if (i >= steps.length) {
+        busy = false; refreshActions();
+        if (kind === "up") {
+          setStatus("完成", "ok");
+          result.textContent = "对象 key：hanbot/" + Math.random().toString(36).slice(2, 10) + ".zip";
+          logLine("上传完成，存档已加密入库", "good");
+        } else {
+          setStatus("完成", "ok");
+          result.textContent = "已解压覆盖至 " + pathInput.textContent;
+          logLine("下载完成，已覆盖解压到该目录", "good");
+        }
+        return;
+      }
+      var s = steps[i++];
+      stageText.textContent = s[0];
+      barFill.style.width = s[1] + "%";
+      pctText.textContent = s[1] + "%";
+      logLine(s[0]);
+      setTimeout(tick, 700);
+    }
+    tick();
+  }
+
+  btnUpload.addEventListener("click", function () { simulate("up"); });
+  btnDownload.addEventListener("click", function () { simulate("down"); });
+
+  // 初始
+  setStatus("就绪", "");
+  logLine("双子匣已就绪，请输入密码并选择目录");
+  refreshActions();
+})();
+</script>
+</body>
+</html>
