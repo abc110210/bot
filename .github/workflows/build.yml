@@ -2,12 +2,15 @@ name: Build Windows Client
 
 # 客户端是纯 Win32 + C++17、零第三方依赖、/MT 静态链接，
 # 目标机器不需要安装任何 VC++ 运行库。本工作流只负责在 GitHub 上编译出 exe。
+# 仅手动触发（workflow_dispatch），不随 push / PR 自动跑。
 
 on:
   workflow_dispatch:   # 仅允许在 Actions 页面手动触发
 
 permissions:
   contents: read
+  id-token: write      # actions/upload-artifact@v4 新版后端需要
+  actions: read
 
 jobs:
   build:
@@ -20,12 +23,24 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 准备 MSVC 工具链 (VS2022)
-        uses: microsoft/setup-msbuild@v2
+      # 把 MSVC 工具链（cl / link / rc / lib / include）挂到 PATH。
+      # 注意：不用 VS IDE 生成器，避免 CMake 在某些 runner 上“找不到 Visual Studio 实例”。
+      - name: 配置 MSVC 工具链 (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: CMake 配置
+      # 确保 Ninja 可用（GitHub 的 windows runner 已自带，这里做个兜底）
+      - name: 确保 Ninja 可用
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja -y
+          }
+          ninja --version
+
+      - name: CMake 配置（Ninja 生成器）
         working-directory: client
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
       - name: 编译 Release
         working-directory: client
