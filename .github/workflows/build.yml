@@ -4,15 +4,7 @@ name: Build Windows Client
 # 目标机器不需要安装任何 VC++ 运行库。本工作流只负责在 GitHub 上编译出 exe。
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - 'client/**'
-      - '.github/workflows/build.yml'
-  pull_request:
-    paths:
-      - 'client/**'
-  workflow_dispatch:   # 允许在 Actions 页面手动触发
+  workflow_dispatch:   # 仅允许在 Actions 页面手动触发
 
 permissions:
   contents: read
