@@ -1,0 +1,55 @@
+name: Build Windows Client
+
+# 客户端是纯 Win32 + C++17、零第三方依赖、/MT 静态链接，
+# 目标机器不需要安装任何 VC++ 运行库。本工作流只负责在 GitHub 上编译出 exe。
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'client/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'client/**'
+  workflow_dispatch:   # 允许在 Actions 页面手动触发
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Windows x64 / Release / /MT)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 MSVC 工具链 (VS2022)
+        uses: microsoft/setup-msbuild@v2
+
+      - name: CMake 配置
+        working-directory: client
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: 编译 Release
+        working-directory: client
+        run: cmake --build build --config Release
+
+      - name: 定位生成的 exe
+        working-directory: client
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter HanbotSavesUploader.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有找到 HanbotSavesUploader.exe，编译可能失败" }
+          echo "EXE_PATH=$($exe.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          Write-Host "已生成可执行文件: $($exe.FullName)"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: HanbotSavesUploader-windows-x64
+          path: ${{ env.EXE_PATH }}
+          if-no-files-found: error
