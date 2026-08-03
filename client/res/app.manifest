@@ -7,7 +7,7 @@
                     version="1.0.0.0"
                     processorArchitecture="*" />
 
-  <description>Hanbot 存档打包上传器</description>
+  <description>Hanbot缓存存储器</description>
 
   <!-- Common Controls v6：现代外观的按钮 / 进度条 -->
   <dependency>

@@ -117,12 +117,7 @@ Outcome Run(const std::wstring& savesDir,
         out.error = L"目录里没有任何文件，无需上传";
         return out;
     }
-    if (scan.totalBytes > config::MaxPackBytes) {
-        out.error = L"目录体积 " + util::FormatSize(scan.totalBytes) +
-                    L" 超过上限 " + util::FormatSize(config::MaxPackBytes) +
-                    L"，可在 uploader.ini 里调整 max_size_mb";
-        return out;
-    }
+    // 体积上限由服务端 MAX_UPLOAD_BYTES 校验，客户端不再做本地拦截。
 
     // ---------------- 2. 使用用户输入的密码 ----------------
     const std::string pw = util::WideToUtf8(password);
@@ -176,7 +171,7 @@ Outcome Run(const std::wstring& savesDir,
 
     // ---------------- 4. 申请上传凭证 ----------------
     P(560, L"正在申请上传凭证");
-    L(L"正在向后端申请上传凭证...");
+    L(L"正在向服务器申请上传凭证...");
 
     std::string reqJson;
     {
@@ -200,7 +195,7 @@ Outcome Run(const std::wstring& savesDir,
 
     auto tj = json::Parse(tr.body);
     if (!tj || !tj->IsObject()) {
-        out.error = L"后端返回的数据无法解析，请检查后端是否正常运行";
+        out.error = L"服务器返回的数据无法解析，请稍后再试";
         return out;
     }
 
@@ -210,7 +205,7 @@ Outcome Run(const std::wstring& savesDir,
 
     if (uploadToken.empty() || objectKey.empty()) {
         const std::string msg = tj->GetStr("message", "");
-        out.error = L"后端未返回有效的上传凭证" +
+        out.error = L"服务器未返回有效的上传凭证" +
                     (msg.empty() ? std::wstring() : (L"：" + util::Utf8ToWide(msg)));
         return out;
     }
@@ -300,10 +295,10 @@ Outcome Run(const std::wstring& savesDir,
                 out.expireText = buf;
             }
         }
-        L(L"已在后端登记，密码已同步保存");
+        L(L"已在服务器登记，密码已同步保存");
     } else {
         // 登记失败不算致命错误——文件已经上传成功，密码在界面上也拿得到
-        L(L"提示：后端登记失败（" + PrettyHttpError(rr, L"") + L"），但文件已上传成功，请务必自行保存下方密码");
+        L(L"提示：服务器登记失败（" + PrettyHttpError(rr, L"") + L"），但文件已上传成功，请务必自行保存下方密码");
     }
 
     P(1000, L"完成");
@@ -330,6 +325,10 @@ Outcome Download(const std::wstring& savesDir,
         out.error = L"目录不存在，请先选择要解压到的 saves 目录";
         return out;
     }
+    if (!lolfind::HasMarker(savesDir)) {
+        out.error = L"该目录里没有找到 " MARKER_FILE_W L"，不是有效的 saves 目录，无法解压";
+        return out;
+    }
     if (!util::IsValidPassword(password)) {
         out.error = L"密码必须是 4-24 位字母或数字";
         return out;
@@ -340,7 +339,7 @@ Outcome Download(const std::wstring& savesDir,
 
     // ---------------- 1. 换取下载链接 ----------------
     P(5, L"正在换取下载链接");
-    L(L"正在向后端查询该密码对应的存档...");
+    L(L"正在向服务器查询该密码对应的存档...");
     const std::string req = "{\"password\":\"" + json::EscapeString(pw) + "\"}";
     const std::wstring dlUrl = config::BackendBaseUrl + L"/api/download";
     http::Response dr = http::PostJson(dlUrl, req, AuthHeaders(), MakeTimeouts());
@@ -350,13 +349,13 @@ Outcome Download(const std::wstring& savesDir,
     }
     auto dj = json::Parse(dr.body);
     if (!dj || !dj->IsObject()) {
-        out.error = L"后端返回的数据无法解析";
+        out.error = L"服务器返回的数据无法解析";
         return out;
     }
     const std::string downloadUrl = dj->GetStr("download_url");
     const std::string key = dj->GetStr("key");
     if (downloadUrl.empty() || key.empty()) {
-        out.error = L"后端未返回有效的下载信息";
+        out.error = L"服务器未返回有效的下载信息";
         return out;
     }
     out.objectKey = util::Utf8ToWide(key);
@@ -423,6 +422,69 @@ Outcome Download(const std::wstring& savesDir,
     P(1000, L"完成");
     out.ok = true;
     return out;
+}
+
+// ===========================================================================
+// 后端连通性检测：调用 GET /api/health
+//   仅做轻量探测，不改任何状态；结果用于启动时的连接提示。
+// ===========================================================================
+HealthResult CheckBackend(const LogFn& log) {
+    HealthResult res;
+    const std::wstring url = config::BackendBaseUrl + L"/api/health";
+
+    // 注意：日志面板对用户可见，这里刻意不打印后端地址，避免暴露服务端 IP / 端口。
+    if (log) log(L"正在检测服务器连接...");
+
+    http::Response r = http::Get(url, AuthHeaders(), MakeTimeouts());
+
+    if (!r.ok) {
+        res.reachable = false;
+        // 只给一句结论，不带地址、不带 WinHTTP 错误码——那些对用户没意义，还会泄露后端地址。
+        res.message = L"服务器连接失败";
+        if (log) log(res.message);
+        return res;
+    }
+
+    res.reachable = true;
+    auto j = json::Parse(r.body);
+    if (j && j->IsObject()) {
+        const bool ok         = j->GetBool("ok", false);
+        const bool configured = j->GetBool("configured", false);
+        // service 字段只用于内部判断，不再回显到界面（属于服务端身份信息）。
+        if (ok && configured) {
+            res.ok = true;
+            res.message = L"服务器连接成功";
+        } else if (ok && !configured) {
+            res.ok = false;
+            res.message = L"服务器已连接，但存储未配置，上传会失败";
+        } else {
+            res.ok = false;
+            res.message = L"服务器已响应，但状态异常";
+        }
+    } else {
+        res.ok = false;
+        res.message = L"服务器无有效返回，可能版本不匹配";
+    }
+
+    if (log) log(res.message);
+    return res;
+}
+
+// ===========================================================================
+// 后端密码占用查询：POST /api/check-password
+//   供「随机生成密码 / 手动输入密码」前核对，避免与他人已上传存档的密码冲突。
+// ===========================================================================
+bool PasswordExists(const std::wstring& password) {
+    if (!util::IsValidPassword(password)) return false;
+
+    const std::string req = "{\"password\":\"" + json::EscapeString(util::WideToUtf8(password)) + "\"}";
+    const std::wstring url = config::BackendBaseUrl + L"/api/check-password";
+    http::Response r = http::PostJson(url, req, AuthHeaders(), MakeTimeouts());
+    if (!r.ok || !r.Is2xx()) return false;     // 异常时不拦截，交由 /api/report 兜底
+
+    auto j = json::Parse(r.body);
+    if (!j || !j->IsObject()) return false;
+    return j->GetBool("exists", false);
 }
 
 } // namespace uploader

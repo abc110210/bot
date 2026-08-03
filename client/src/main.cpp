@@ -1,34 +1,36 @@
 // ---------------------------------------------------------------------------
-// Hanbot 存档打包上传器 —— 主程序（纯 Win32 API，无第三方 UI 框架）
-//   二次元风格：自定义圆角窗口 + 樱粉/薰衣草渐变背景 + 自绘圆角按钮
+// Hanbot 存档打包上传器 —— 主程序（WebView2 宿主 + native↔JS 桥接）
+//
+//   形态：无边框圆角窗口 + DWM 阴影，WebView2 铺满客户区渲染 webui/index.html
+//         （以资源形式内嵌），通过 WebMessage 与页面双向通信。
+//   说明：所有上传/下载/检测/连通性逻辑均复用原有模块（uploader / lolfind /
+//         util / config），本文件只替换“UI 渲染层”——把 Win32 控件更新改为
+//         向页面 PostWebMessageAsString 推 JSON。
 // ---------------------------------------------------------------------------
 
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <shellapi.h>
-#include <wingdi.h>
+
+#include <wrl.h>
+#include <WebView2.h>
 
 #include <string>
 #include <vector>
 #include <atomic>
 #include <thread>
 
-// 老版本 SDK 兜底定义
-#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
-#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
-#endif
-#ifndef FW_SEMIBOLD
-#define FW_SEMIBOLD 600
-#endif
-
 #include "resource.h"
 #include "config.h"
 #include "util.h"
 #include "lol_finder.h"
 #include "uploader.h"
+#include "json_mini.h"
+
+using namespace Microsoft::WRL;
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "ole32.lib")
@@ -36,10 +38,9 @@ DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "msimg32.lib")
-
-// Common Controls v6 的依赖声明写在 res/app.manifest 里，
-// 由资源脚本统一嵌入（CMake 已关闭链接器自动生成清单）。
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "WebView2LoaderStatic.lib")
 
 // ===========================================================================
 // 全局状态
@@ -49,68 +50,27 @@ namespace {
 HINSTANCE g_hInst = nullptr;
 HWND      g_hMain = nullptr;
 
-HWND g_hHeader = nullptr, g_hSubHeader = nullptr;
-HWND g_hPathLabel = nullptr, g_hPathEdit = nullptr;
-HWND g_hBtnDetect = nullptr, g_hBtnBrowse = nullptr;
-HWND g_hVerify = nullptr;
-HWND g_hPwdLabel = nullptr, g_hPwdEdit = nullptr, g_hPwdHint = nullptr;
-HWND g_hBtnUpload = nullptr, g_hBtnDownload = nullptr;
-HWND g_hProgress = nullptr, g_hStage = nullptr;
-HWND g_hLog = nullptr;
-HWND g_hResultLabel = nullptr, g_hResult = nullptr;
-HWND g_hBtnCopy = nullptr;
-HWND g_hFooter = nullptr;
+ComPtr<ICoreWebView2Controller> g_controller;
+ComPtr<ICoreWebView2>           g_webview;
 
-HFONT g_fontBase = nullptr;
-HFONT g_fontTitle = nullptr;
-HFONT g_fontTitleBar = nullptr;
-HFONT g_fontButton = nullptr;
-HFONT g_fontMono = nullptr;
-
-HBRUSH g_brushBg = nullptr;
-HBRUSH g_brushCard = nullptr;
+bool g_pageReady = false;                 // 页面是否已发来 ready（可收消息）
+std::vector<std::wstring> g_pending;      // 页面就绪前缓冲的待发 JSON
 
 int  g_dpi = 96;
-int  g_titleH = 42;          // 标题栏高度（随 DPI 缩放）
+int  g_titleH = 42;
+bool g_useRgn = true;                      // Win11 用 DWM 原生圆角；否则用 rgn
 
 std::atomic<bool> g_busy{ false };
 std::atomic<bool> g_cancel{ false };
 std::atomic<bool> g_uploadDone{ false };
 
-std::wstring g_lastResultText;
-
-// 标题栏按钮悬停
-bool g_closeHot = false, g_minHot = false, g_titleTracking = false;
-
-// ===========================================================================
-// 二次元配色
-// ===========================================================================
-const COLORREF kColBgTop    = RGB(255, 224, 240);   // 樱粉
-const COLORREF kColBgMid    = RGB(233, 217, 255);   // 薰衣草
-const COLORREF kColBgBottom = RGB(214, 240, 255);   // 天空蓝
-
-const COLORREF kColText    = RGB(58, 42, 77);       // 梅紫
-const COLORREF kColSubText = RGB(124, 108, 146);    // 柔和紫灰
-const COLORREF kColOk      = RGB(43, 182, 115);     // 薄荷绿
-const COLORREF kColWarn    = RGB(229, 84, 122);     // 樱红
-
-// 上传按钮（粉 -> 紫）
-const COLORREF kUpTop = RGB(255, 158, 194), kUpBot = RGB(193, 139, 255);
-const COLORREF kUpTopH = RGB(255, 182, 212), kUpBotH = RGB(207, 162, 255);
-// 下载按钮（蓝 -> 紫）
-const COLORREF kDlTop = RGB(155, 220, 255), kDlBot = RGB(185, 140, 255);
-const COLORREF kDlTopH = RGB(178, 232, 255), kDlBotH = RGB(202, 162, 255);
-// 幽灵按钮（白底紫边）
-const COLORREF kGhostFill = RGB(255, 255, 255), kGhostFillH = RGB(255, 236, 246);
-const COLORREF kGhostBorder = RGB(206, 176, 224), kGhostText = RGB(96, 64, 120);
+std::wstring g_lastResultText;            // 关闭前密码警告用
+std::wstring g_lastDir;                   // 最近一次操作的目录（结果文案用）
+std::wstring g_appIconB64;                // 启动期从资源读取的软件图标（base64，供页面头部注入）
 
 inline int S(int v) { return ::MulDiv(v, g_dpi, 96); }
 
-COLORREF Darken(COLORREF c, int f) {
-    return RGB(GetRValue(c) * f / 100, GetGValue(c) * f / 100, GetBValue(c) * f / 100);
-}
-
-// GetDpiForWindow 是 Win10 1607+ 才有的，动态解析避免链接期/运行期报错
+// GetDpiForWindow 是 Win10 1607+ 才有的，动态解析避免链接/运行期报错
 int QueryWindowDpi(HWND hwnd) {
     HMODULE user32 = ::GetModuleHandleW(L"user32.dll");
     if (user32) {
@@ -132,257 +92,117 @@ int QueryWindowDpi(HWND hwnd) {
 }
 
 // ---------------------------------------------------------------------------
-// 渐变 / 圆角绘制工具
+// JSON 构建（native -> page）
 // ---------------------------------------------------------------------------
-bool VGrad(HDC dc, const RECT& r, COLORREF c1, COLORREF c2) {
-    TRIVERTEX tv[2]{};
-    tv[0].x = r.left;  tv[0].y = r.top;
-    tv[0].Red = GetRValue(c1) << 8;  tv[0].Green = GetGValue(c1) << 8;  tv[0].Blue = GetBValue(c1) << 8;  tv[0].Alpha = 0xff00;
-    tv[1].x = r.right; tv[1].y = r.bottom;
-    tv[1].Red = GetRValue(c2) << 8;  tv[1].Green = GetGValue(c2) << 8;  tv[1].Blue = GetBValue(c2) << 8;  tv[1].Alpha = 0xff00;
-    GRADIENT_RECT gr{}; gr.UpperLeft = 0; gr.LowerRight = 1;
-    return ::GradientFill(dc, tv, 2, &gr, 1, GRADIENT_FILL_RECT_V) != 0;
+std::wstring JStr(const std::wstring& s) {
+    std::string u8 = util::WideToUtf8(s);
+    std::string esc = json::EscapeString(u8);
+    return L"\"" + util::Utf8ToWide(esc) + L"\"";
+}
+std::wstring WBool(bool b) { return b ? L"true" : L"false"; }
+
+void PostJson(const std::wstring& json) {
+    if (g_webview && g_pageReady)
+        g_webview->PostWebMessageAsString(json.c_str());
+    else
+        g_pending.push_back(json);
 }
 
-void VGrad3(HDC dc, const RECT& rc, COLORREF c1, COLORREF c2, COLORREF c3) {
-    const int mid = rc.top + (rc.bottom - rc.top) / 2;
-    RECT r1 = { rc.left, rc.top, rc.right, mid };
-    RECT r2 = { rc.left, mid, rc.right, rc.bottom };
-    VGrad(dc, r1, c1, c2);
-    VGrad(dc, r2, c2, c3);
+std::wstring BuildInit() {
+    // 刻意不下发后端地址：页面日志对用户可见，地址一旦落到界面上就等于公开了服务端。
+    return std::wstring(L"{\"type\":\"init\",\"app\":") + JStr(APP_TITLE_W) +
+           L",\"version\":\"1.0.0\"}";
+}
+std::wstring BuildLog(const std::wstring& t) {
+    return L"{\"type\":\"log\",\"text\":" + JStr(t) + L"}";
+}
+std::wstring BuildProgress(int permille, const std::wstring& s) {
+    return L"{\"type\":\"progress\",\"permille\":" + std::to_wstring(permille) +
+           L",\"stage\":" + JStr(s) + L"}";
+}
+std::wstring BuildConn(int st, const std::wstring& t) {
+    return L"{\"type\":\"conn\",\"state\":" + std::to_wstring(st) + L",\"text\":" + JStr(t) + L"}";
+}
+std::wstring BuildBusy(bool b) {
+    return L"{\"type\":\"busy\",\"busy\":" + WBool(b) + L"}";
+}
+std::wstring BuildDetectDone(const std::wstring& path, int vs, const std::wstring& vt) {
+    return L"{\"type\":\"detectDone\",\"path\":" + JStr(path) +
+           L",\"verifyState\":" + std::to_wstring(vs) + L",\"verifyText\":" + JStr(vt) + L"}";
+}
+std::wstring BuildDir(const std::wstring& path, int vs, const std::wstring& vt) {
+    return L"{\"type\":\"dir\",\"path\":" + JStr(path) +
+           L",\"verifyState\":" + std::to_wstring(vs) + L",\"verifyText\":" + JStr(vt) + L"}";
+}
+std::wstring BuildDone(bool ok, bool canceled, bool isDownload, bool pwdWrong,
+                       const std::wstring& error, const std::wstring& resultText,
+                       const std::wstring& resultLabel, const std::wstring& stage, bool copyEnabled) {
+    return L"{\"type\":\"done\",\"ok\":" + WBool(ok) +
+           L",\"canceled\":" + WBool(canceled) +
+           L",\"isDownload\":" + WBool(isDownload) +
+           L",\"passwordWrong\":" + WBool(pwdWrong) +
+           L",\"error\":" + JStr(error) +
+           L",\"resultText\":" + JStr(resultText) +
+           L",\"resultLabel\":" + JStr(resultLabel) +
+           L",\"stage\":" + JStr(stage) +
+           L",\"copyEnabled\":" + WBool(copyEnabled) + L"}";
 }
 
-void FillRoundRect(HDC dc, const RECT& r, int rad, COLORREF fill, COLORREF border) {
-    HRGN rgn = ::CreateRoundRectRgn(r.left, r.top, r.right, r.bottom, rad, rad);
-    if (rgn) {
-        HBRUSH fb = ::CreateSolidBrush(fill);
-        ::FillRgn(dc, rgn, fb);
-        if (border != CLR_NONE) {
-            HPEN pen = ::CreatePen(PS_SOLID, 1, border);
-            HGDIOBJ op = ::SelectObject(dc, pen);
-            HGDIOBJ ob = (HGDIOBJ)::GetStockObject(NULL_BRUSH);
-            ::SelectObject(dc, ob);
-            ::RoundRect(dc, r.left, r.top, r.right, r.bottom, rad, rad);
-            ::SelectObject(dc, op);
-            ::DeleteObject(pen);
-        }
-        ::DeleteObject(fb);
-        ::DeleteObject(rgn);
+// 密码查重结果（worker 线程 -> UI 线程）
+struct PwdCheckResult {
+    std::wstring password;
+    bool         exists = false;
+};
+
+std::wstring BuildIcon(const std::wstring& b64) {
+    return L"{\"type\":\"icon\",\"data\":\"" + b64 + L"\"}";
+}
+std::wstring BuildPasswordChecked(const std::wstring& pwd, bool exists) {
+    return L"{\"type\":\"passwordChecked\",\"password\":" + JStr(pwd) +
+           L",\"exists\":" + WBool(exists) + L"}";
+}
+
+// 标准 Base64 编码（用于把图标资源注入页面）
+std::wstring Base64Encode(const uint8_t* data, size_t len) {
+    static const char tbl[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t v = (uint32_t)data[i] << 16;
+        if (i + 1 < len) v |= (uint32_t)data[i + 1] << 8;
+        if (i + 2 < len) v |= (uint32_t)data[i + 2];
+        out.push_back(tbl[(v >> 18) & 0x3F]);
+        out.push_back(tbl[(v >> 12) & 0x3F]);
+        out.push_back((i + 1 < len) ? tbl[(v >> 6) & 0x3F] : '=');
+        out.push_back((i + 2 < len) ? tbl[v & 0x3F] : '=');
     }
+    return util::Utf8ToWide(out);
 }
 
-// 自绘渐变圆角按钮
-void DrawGradientButton(HDC dc, const RECT& r, bool pressed, bool disabled,
-                        COLORREF t, COLORREF b, COLORREF tH, COLORREF bH,
-                        const wchar_t* text, HFONT font) {
-    COLORREF ft = disabled ? Darken(t, 70) : (pressed ? Darken(t, 88) : tH);
-    COLORREF fb = disabled ? Darken(b, 70) : (pressed ? Darken(b, 88) : bH);
-
-    HRGN rgn = ::CreateRoundRectRgn(r.left, r.top, r.right, r.bottom, S(12), S(12));
-    if (rgn) {
-        ::SelectClipRgn(dc, rgn);
-        VGrad(dc, r, ft, fb);
-        ::SelectClipRgn(dc, nullptr);
-        ::DeleteObject(rgn);
-    }
-
-    ::SetBkMode(dc, TRANSPARENT);
-    ::SetTextColor(dc, disabled ? RGB(255, 255, 255) : RGB(255, 255, 255));
-    HGDIOBJ of = ::SelectObject(dc, font ? font : g_fontButton);
-    RECT tr = r;
-    if (pressed) ::OffsetRect(&tr, 0, S(1));
-    ::DrawTextW(dc, text, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    ::SelectObject(dc, of);
-}
-
-// 自绘幽灵按钮（白底紫边）
-void DrawGhostButton(HDC dc, const RECT& r, bool pressed, bool disabled,
-                     const wchar_t* text, HFONT font) {
-    COLORREF fill = disabled ? RGB(245, 240, 248) : (pressed ? kGhostFillH : kGhostFill);
-    FillRoundRect(dc, r, S(10), fill, disabled ? RGB(225, 218, 232) : kGhostBorder);
-
-    ::SetBkMode(dc, TRANSPARENT);
-    ::SetTextColor(dc, disabled ? RGB(180, 170, 190) : kGhostText);
-    HGDIOBJ of = ::SelectObject(dc, font ? font : g_fontButton);
-    RECT tr = r;
-    if (pressed) ::OffsetRect(&tr, 0, S(1));
-    ::DrawTextW(dc, text, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    ::SelectObject(dc, of);
-}
-
-// 标题栏上的圆形小按钮（最小/关闭）
-RECT CloseRect(int W) {
-    const int bw = S(26), bh = S(24), top = S(9), pad = S(14);
-    return { W - pad - bw, top, W - pad, top + bh };
-}
-RECT MinRect(int W) {
-    const int bw = S(26), bh = S(24), top = S(9), pad = S(14), gap = S(8);
-    return { W - pad - bw * 2 - gap, top, W - pad - bw - gap, top + bh };
-}
-
-void DrawCaptionButton(HDC dc, const RECT& r, bool hover, bool isClose) {
-    FillRoundRect(dc, r, S(7),
-                  hover ? (isClose ? RGB(255, 180, 200) : RGB(225, 210, 240))
-                        : RGB(255, 255, 255),
-                  hover ? (isClose ? RGB(240, 150, 175) : RGB(200, 180, 225))
-                        : RGB(225, 218, 232));
-
-    // 画图标
-    int cx = (r.left + r.right) / 2;
-    int cy = (r.top + r.bottom) / 2;
-    int d = S(5);
-    HPEN pen = ::CreatePen(PS_SOLID, S(2), isClose ? RGB(200, 70, 100) : RGB(110, 80, 140));
-    HGDIOBJ op = ::SelectObject(dc, pen);
-    if (isClose) {
-        ::MoveToEx(dc, cx - d, cy - d, nullptr);
-        ::LineTo(dc, cx + d, cy + d);
-        ::MoveToEx(dc, cx + d, cy - d, nullptr);
-        ::LineTo(dc, cx - d, cy + d);
-    } else {
-        ::MoveToEx(dc, cx - d, cy, nullptr);
-        ::LineTo(dc, cx + d, cy);
-    }
-    ::SelectObject(dc, op);
-    ::DeleteObject(pen);
+// 从 RCDATA 资源读取软件图标（PNG），base64 编码后供 WebView2 头部图标使用
+std::wstring LoadAppIconBase64() {
+    HRSRC hRes = ::FindResourceW(g_hInst, MAKEINTRESOURCE(IDR_APP_ICON_PNG), RT_RCDATA);
+    if (!hRes) return L"";
+    HGLOBAL hGlob = ::LoadResource(g_hInst, hRes);
+    if (!hGlob) return L"";
+    DWORD size = ::SizeofResource(g_hInst, hRes);
+    const uint8_t* data = (const uint8_t*)::LockResource(hGlob);
+    if (!data || size == 0) return L"";
+    return Base64Encode(data, (size_t)size);
 }
 
 // ---------------------------------------------------------------------------
-// 跨线程投递
+// 跨线程投递（worker 线程 -> UI 线程）
 // ---------------------------------------------------------------------------
 void PostLog(const std::wstring& text) {
     if (!g_hMain) return;
     ::PostMessageW(g_hMain, WM_APP_LOG, 0, (LPARAM)new std::wstring(text));
 }
-
 void PostProgress(int permille, const std::wstring& stage) {
     if (!g_hMain) return;
     ::PostMessageW(g_hMain, WM_APP_PROGRESS, (WPARAM)permille,
                    (LPARAM)new std::wstring(stage));
-}
-
-// ---------------------------------------------------------------------------
-// UI 小工具
-// ---------------------------------------------------------------------------
-void AppendLog(const std::wstring& text) {
-    if (!g_hLog) return;
-
-    SYSTEMTIME st{};
-    ::GetLocalTime(&st);
-    wchar_t ts[32]{};
-    ::swprintf(ts, 32, L"[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
-
-    std::wstring line = ts + text + L"\r\n";
-
-    const int len = ::GetWindowTextLengthW(g_hLog);
-    ::SendMessageW(g_hLog, EM_SETSEL, (WPARAM)len, (LPARAM)len);
-    ::SendMessageW(g_hLog, EM_REPLACESEL, FALSE, (LPARAM)line.c_str());
-    ::SendMessageW(g_hLog, EM_SCROLLCARET, 0, 0);
-}
-
-void SetVerifyState(int state, const std::wstring& text) {
-    // state: 0 未知 / 1 通过 / 2 失败
-    ::SetWindowTextW(g_hVerify, text.c_str());
-    ::SetWindowLongPtrW(g_hVerify, GWLP_USERDATA, (LONG_PTR)state);
-    ::InvalidateRect(g_hVerify, nullptr, TRUE);
-}
-
-void SetPwdHint(int state, const std::wstring& text) {
-    // state: 0 提示 / 1 有效 / 2 无效
-    ::SetWindowTextW(g_hPwdHint, text.c_str());
-    ::SetWindowLongPtrW(g_hPwdHint, GWLP_USERDATA, (LONG_PTR)state);
-    ::InvalidateRect(g_hPwdHint, nullptr, TRUE);
-}
-
-std::wstring GetPathFromEdit() {
-    const int len = ::GetWindowTextLengthW(g_hPathEdit);
-    if (len <= 0) return L"";
-    std::wstring s((size_t)len + 1, L'\0');
-    ::GetWindowTextW(g_hPathEdit, &s[0], len + 1);
-    s.resize((size_t)len);
-    return util::Trim(s);
-}
-
-std::wstring GetPasswordFromEdit() {
-    const int len = ::GetWindowTextLengthW(g_hPwdEdit);
-    if (len <= 0) return L"";
-    std::wstring s((size_t)len + 1, L'\0');
-    ::GetWindowTextW(g_hPwdEdit, &s[0], len + 1);
-    s.resize((size_t)len);
-    return s;
-}
-
-void UpdatePwdHint() {
-    const std::wstring p = GetPasswordFromEdit();
-    if (p.empty()) {
-        SetPwdHint(0, L"请输入 4~24 位字母或数字，作为压缩包密码（上传/下载都需用同一密码）");
-        return;
-    }
-    if (util::IsValidPassword(p))
-        SetPwdHint(1, L"✓ 密码格式有效");
-    else
-        SetPwdHint(2, L"✗ 需 4~24 位字母或数字（仅限 A-Z a-z 0-9）");
-}
-
-// 前向声明：FilterPasswordEdit 内部会调用，定义在下方
-void RefreshButtons();
-
-// 实时过滤密码框：仅保留字母数字、最长 24 位
-void FilterPasswordEdit() {
-    HWND h = g_hPwdEdit;
-    const int len = ::GetWindowTextLengthW(h);
-    std::wstring s((size_t)len + 1, L'\0');
-    ::GetWindowTextW(h, &s[0], len + 1);
-    s.resize((size_t)len);
-
-    std::wstring out;
-    bool changed = false;
-    for (wchar_t c : s) {
-        if (out.size() >= 24) { changed = true; break; }
-        const bool ok = (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9');
-        if (ok) out += c; else changed = true;
-    }
-
-    if (changed) {
-        ::SetWindowTextW(h, out.c_str());
-        ::SendMessageW(h, EM_SETSEL, (WPARAM)out.size(), (LPARAM)out.size());
-    }
-    UpdatePwdHint();
-    RefreshButtons();
-}
-
-// 根据目录与密码状态，启用/禁用上传、下载按钮
-void RefreshButtons() {
-    const std::wstring dir = GetPathFromEdit();
-    const bool dirValid  = !dir.empty() && util::DirectoryExists(dir) && lolfind::HasMarker(dir);
-    const bool dirExists = !dir.empty() && util::DirectoryExists(dir);
-    const bool pwdOk     = util::IsValidPassword(GetPasswordFromEdit());
-
-    ::EnableWindow(g_hBtnUpload,   !g_busy.load() && dirValid  && pwdOk);
-    ::EnableWindow(g_hBtnDownload, !g_busy.load() && dirExists && pwdOk);
-}
-
-void RefreshVerify() {
-    const std::wstring p = GetPathFromEdit();
-    if (p.empty()) {
-        SetVerifyState(0, L"尚未选择目录");
-    } else if (!util::DirectoryExists(p)) {
-        SetVerifyState(2, L"× 目录不存在");
-    } else if (!lolfind::HasMarker(p)) {
-        SetVerifyState(2, L"× 目录中没有 " MARKER_FILE_W L"，不是有效的 saves 目录");
-    } else {
-        SetVerifyState(1, L"√ 校验通过，已找到 " MARKER_FILE_W);
-    }
-    RefreshButtons();
-}
-
-void SetBusy(bool busy) {
-    g_busy.store(busy);
-    ::EnableWindow(g_hBtnDetect, busy ? FALSE : TRUE);
-    ::EnableWindow(g_hBtnBrowse, busy ? FALSE : TRUE);
-    ::EnableWindow(g_hPathEdit,  busy ? FALSE : TRUE);
-    ::EnableWindow(g_hPwdEdit,   busy ? FALSE : TRUE);
-    if (!busy) RefreshVerify();
-    else { ::EnableWindow(g_hBtnUpload, FALSE); ::EnableWindow(g_hBtnDownload, FALSE); }
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +235,6 @@ std::wstring PickFolder(HWND owner) {
         return result;
     }
 
-    // 兜底：老式对话框
     BROWSEINFOW bi{};
     wchar_t buf[MAX_PATH]{};
     bi.hwndOwner = owner;
@@ -432,7 +251,7 @@ std::wstring PickFolder(HWND owner) {
 }
 
 // ---------------------------------------------------------------------------
-// 工作线程
+// 工作线程（逻辑全部复用，仅把结果经 WM_APP_* 回 UI 线程）
 // ---------------------------------------------------------------------------
 void DetectThread() {
     g_cancel.store(false);
@@ -442,8 +261,7 @@ void DetectThread() {
 
     auto results = lolfind::FindAll(
         [](const std::wstring& s) { PostLog(s); },
-        &g_cancel,
-        60);
+        &g_cancel, 60);
 
     auto* payload = new std::vector<lolfind::Candidate>(std::move(results));
     ::PostMessageW(g_hMain, WM_APP_DETECT_DONE, 0, (LPARAM)payload);
@@ -452,6 +270,7 @@ void DetectThread() {
 void UploadThread(std::wstring dir, std::wstring password) {
     g_cancel.store(false);
     ::PostMessageW(g_hMain, WM_APP_SET_BUSY, 1, 0);
+    g_lastDir = dir;
 
     uploader::Outcome result = uploader::Run(
         dir, password,
@@ -466,6 +285,7 @@ void UploadThread(std::wstring dir, std::wstring password) {
 void DownloadThread(std::wstring dir, std::wstring password) {
     g_cancel.store(false);
     ::PostMessageW(g_hMain, WM_APP_SET_BUSY, 1, 0);
+    g_lastDir = dir;
 
     uploader::Outcome result = uploader::Download(
         dir, password,
@@ -477,198 +297,278 @@ void DownloadThread(std::wstring dir, std::wstring password) {
     ::PostMessageW(g_hMain, WM_APP_UPLOAD_DONE, 0, (LPARAM)payload);
 }
 
+void ConnThread() {
+    uploader::HealthResult res = uploader::CheckBackend(
+        [](const std::wstring& s) { PostLog(s); });
+    auto* payload = new uploader::HealthResult(std::move(res));
+    ::PostMessageW(g_hMain, WM_APP_CONN, 0, (LPARAM)payload);
+}
+
+// 密码查重：问后端某密码是否已被占用
+void CheckPwdThread(std::wstring password) {
+    bool exists = uploader::PasswordExists(password);
+    auto* payload = new PwdCheckResult{ std::move(password), exists };
+    ::PostMessageW(g_hMain, WM_APP_PWD_CHECK, 0, (LPARAM)payload);
+}
+
 // ---------------------------------------------------------------------------
-// 创建控件
+// 内嵌 HTML 资源读取
 // ---------------------------------------------------------------------------
-HWND MakeStatic(HWND parent, int id, const wchar_t* text, DWORD extra = 0) {
-    return ::CreateWindowExW(0, L"STATIC", text,
-                             WS_CHILD | WS_VISIBLE | extra,
-                             0, 0, 10, 10, parent, (HMENU)(INT_PTR)id, g_hInst, nullptr);
+std::wstring LoadAppHtml() {
+    // RC 里 HTML 是预定义类型 RT_HTML(23)，必须用宏而非字符串 "HTML" 才能匹配
+    HRSRC hRes = ::FindResourceW(g_hInst, MAKEINTRESOURCE(IDR_APP_HTML), RT_HTML);
+    if (!hRes) return L"";
+    HGLOBAL hGlob = ::LoadResource(g_hInst, hRes);
+    if (!hGlob) return L"";
+    DWORD size = ::SizeofResource(g_hInst, hRes);
+    const char* data = (const char*)::LockResource(hGlob);
+    if (!data) return L"";
+    std::string utf8(data, (size_t)size);
+    return util::Utf8ToWide(utf8);
 }
 
-HWND MakeOwnerButton(HWND parent, int id, const wchar_t* text) {
-    return ::CreateWindowExW(0, L"BUTTON", text,
-                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-                             0, 0, 10, 10, parent, (HMENU)(INT_PTR)id, g_hInst, nullptr);
+// ---------------------------------------------------------------------------
+// 桥接：页面 -> native
+// ---------------------------------------------------------------------------
+void HandlePageMessage(const std::wstring& msg) {
+    std::string u8 = util::WideToUtf8(msg);
+    auto j = json::Parse(u8);
+    if (!j || !j->IsObject()) return;
+    std::string type = j->GetStr("type");
+
+    if (type == "ready") {
+        g_pageReady = true;
+        for (auto& p : g_pending)
+            if (g_webview) g_webview->PostWebMessageAsString(p.c_str());
+        g_pending.clear();
+        PostJson(BuildInit());
+        // 把软件图标（base64）推给页面，供头部图标使用
+        if (!g_appIconB64.empty()) PostJson(BuildIcon(g_appIconB64));
+    }
+    else if (type == "health") {
+        std::thread(ConnThread).detach();
+    }
+    else if (type == "detect") {
+        std::thread(DetectThread).detach();
+    }
+    else if (type == "pick") {
+        std::wstring p = PickFolder(g_hMain);
+        if (!p.empty()) {
+            bool has = lolfind::HasMarker(p);
+            int vs = has ? 1 : 2;
+            std::wstring vt = has ? (L"√ 校验通过，已找到 " MARKER_FILE_W)
+                                  : (L"× 目录中没有 " MARKER_FILE_W L"，不是有效的 saves 目录");
+            PostJson(BuildDir(p, vs, vt));
+            PostLog(L"已手动选择：" + p);
+            if (!has) PostLog(L"注意：该目录里没有 " MARKER_FILE_W L"，无法上传");
+        }
+    }
+    else if (type == "upload") {
+        std::wstring dir = util::Utf8ToWide(j->GetStr("dir"));
+        std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
+        g_lastDir = dir;
+        if (dir.empty() || !lolfind::HasMarker(dir)) {
+            PostJson(BuildDone(false, false, false, false,
+                L"当前目录无效，必须是包含 " MARKER_FILE_W L" 的 saves 目录",
+                L"", L"无法上传", L"无法上传", false));
+            return;
+        }
+        if (!util::IsValidPassword(pwd)) {
+            PostJson(BuildDone(false, false, false, false,
+                L"请先在密码框输入 4-24 位字母或数字密码",
+                L"", L"缺少密码", L"缺少密码", false));
+            return;
+        }
+        std::thread(UploadThread, dir, pwd).detach();
+    }
+    else if (type == "download") {
+        std::wstring dir = util::Utf8ToWide(j->GetStr("dir"));
+        std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
+        g_lastDir = dir;
+        if (dir.empty() || !util::DirectoryExists(dir)) {
+            PostJson(BuildDone(false, false, true, false,
+                L"请先选择要解压到的 saves 目录", L"", L"缺少目录", L"缺少目录", false));
+            return;
+        }
+        if (!lolfind::HasMarker(dir)) {
+            PostJson(BuildDone(false, false, true, false,
+                L"该目录没有 " MARKER_FILE_W L"，不是有效的 saves 目录",
+                L"", L"目录无效", L"目录无效", false));
+            return;
+        }
+        if (!util::IsValidPassword(pwd)) {
+            PostJson(BuildDone(false, false, true, false,
+                L"请先输入 4-24 位字母或数字密码", L"", L"缺少密码", L"缺少密码", false));
+            return;
+        }
+        std::thread(DownloadThread, dir, pwd).detach();
+    }
+    else if (type == "copy") {
+        std::wstring text = util::Utf8ToWide(j->GetStr("text"));
+        util::CopyTextToClipboard(g_hMain, text);
+        PostLog(L"结果已复制到剪贴板");
+    }
+    else if (type == "minimize") {
+        ::ShowWindow(g_hMain, SW_MINIMIZE);
+    }
+    else if (type == "close") {
+        ::PostMessageW(g_hMain, WM_CLOSE, 0, 0);
+    }
+    else if (type == "maximize") {
+        if (::IsZoomed(g_hMain)) ::ShowWindow(g_hMain, SW_RESTORE);
+        else ::ShowWindow(g_hMain, SW_MAXIMIZE);
+    }
+    else if (type == "drag") {
+        ::ReleaseCapture();
+        ::SendMessageW(g_hMain, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
+    }
+    else if (type == "checkPassword") {
+        // 页面随机生成 / 手动输入密码后，先问后端是否已被占用
+        std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
+        if (!pwd.empty()) std::thread(CheckPwdThread, pwd).detach();
+    }
 }
 
-void CreateControls(HWND hwnd) {
-    g_hHeader = MakeStatic(hwnd, IDC_STATIC_HEADER, APP_TITLE_W);
-    g_hSubHeader = MakeStatic(hwnd, IDC_STATIC_SUBHEADER,
-        L"定位 League of Legends 的 saves 目录，加密打包上传；或凭密码下载并覆盖解压");
+// ---------------------------------------------------------------------------
+// 结果处理（Outcome -> 页面）
+// ---------------------------------------------------------------------------
+void HandleOutcome(uploader::Outcome* r) {
+    if (!r) return;
 
-    g_hPathLabel = MakeStatic(hwnd, IDC_STATIC_PATH_LABEL, L"saves 目录");
+    std::wstring resultText, resultLabel, stage;
+    bool ok = r->ok, canceled = r->canceled, isDownload = r->isDownload, pwdWrong = r->passwordWrong;
+    bool copyEnabled = false;
 
-    g_hPathEdit = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        0, 0, 10, 10, hwnd, (HMENU)IDC_EDIT_PATH, g_hInst, nullptr);
+    if (canceled) {
+        stage = L"已取消";
+    } else if (!ok) {
+        if (pwdWrong) {
+            stage = L"密码错误";
+            resultText = L"密码不正确，无法解密该压缩包。\r\n请确认下载时使用的密码与上传时一致。";
+        } else {
+            stage = isDownload ? L"下载失败" : L"上传失败";
+            resultText = r->error;
+        }
+    } else if (isDownload) {
+        resultText  = L"已解压到： " + g_lastDir + L"\r\n";
+        resultText += L"恢复文件： " + std::to_wstring((unsigned long long)r->extractedFiles) + L" 个\r\n";
+        resultText += L"下载大小： " + util::FormatSize(r->downloadedBytes) + L"\r\n";
+        resultText += L"解压大小： " + util::FormatSize(r->rawBytes);
+        resultLabel = L"下载结果";
+        stage = L"下载解压完成";
+        copyEnabled = true;
+    } else {
+        resultText  = L"压缩密码： " + r->password + L"\r\n";
+        resultText += L"对象 Key： " + r->objectKey + L"\r\n";
+        if (!r->downloadUrl.empty()) resultText += L"下载链接： " + r->downloadUrl + L"\r\n";
+        if (!r->expireText.empty())  resultText += L"有效期：   " + r->expireText + L"\r\n";
+        resultText += L"压缩包大小：" + util::FormatSize(r->zipBytes) +
+                      L"（原始 " + util::FormatSize(r->rawBytes) + L"，共 " +
+                      std::to_wstring((unsigned long long)r->fileCount) + L" 个文件）";
+        resultLabel = L"上传结果（请务必保存密码）";
+        stage = L"上传完成";
+        copyEnabled = true;
+    }
 
-    g_hBtnDetect = MakeOwnerButton(hwnd, IDC_BTN_DETECT, L"自动检测");
-    g_hBtnBrowse = MakeOwnerButton(hwnd, IDC_BTN_BROWSE, L"手动选择");
+    if (ok && !canceled) { g_lastResultText = resultText; g_uploadDone.store(true); }
 
-    g_hVerify = MakeStatic(hwnd, IDC_STATIC_VERIFY, L"尚未选择目录");
+    if (ok && !canceled && !isDownload) {
+        util::CopyTextToClipboard(g_hMain, resultText);
+        PostLog(L"===== 上传成功，请立即保存下方密码 =====");
+        PostLog(L"结果已自动复制到剪贴板");
+    } else if (ok && !canceled && isDownload) {
+        PostLog(L"===== 下载并解压完成，文件已覆盖至目标目录 =====");
+    } else if (!ok && !canceled) {
+        if (pwdWrong) PostLog(L"密码错误，无法解密压缩包");
+        else PostLog(L"操作失败：" + r->error);
+    } else if (canceled) {
+        PostLog(L"操作已取消");
+    }
 
-    g_hPwdLabel = MakeStatic(hwnd, IDC_STATIC_PWD_LABEL, L"压缩包密码（4-24 位字母/数字）");
-
-    g_hPwdEdit = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
-        0, 0, 10, 10, hwnd, (HMENU)IDC_EDIT_PWD, g_hInst, nullptr);
-
-    g_hPwdHint = MakeStatic(hwnd, IDC_STATIC_PWD_HINT,
-        L"请输入 4~24 位字母或数字，作为压缩包密码（上传/下载都需用同一密码）");
-
-    g_hBtnUpload = MakeOwnerButton(hwnd, IDC_BTN_UPLOAD, L"📤 打包并上传");
-    ::EnableWindow(g_hBtnUpload, FALSE);
-
-    g_hBtnDownload = MakeOwnerButton(hwnd, IDC_BTN_DOWNLOAD, L"📥 下载并解压");
-    ::EnableWindow(g_hBtnDownload, FALSE);
-
-    g_hProgress = ::CreateWindowExW(0, PROGRESS_CLASSW, L"",
-        WS_CHILD | WS_VISIBLE | PBS_SMOOTH,
-        0, 0, 10, 10, hwnd, (HMENU)IDC_PROGRESS, g_hInst, nullptr);
-    ::SendMessageW(g_hProgress, PBM_SETRANGE32, 0, 1000);
-    ::SendMessageW(g_hProgress, PBM_SETSTEP, 1, 0);
-
-    g_hStage = MakeStatic(hwnd, IDC_STATIC_STAGE, L"就绪");
-
-    g_hLog = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP |
-        ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-        0, 0, 10, 10, hwnd, (HMENU)IDC_EDIT_LOG, g_hInst, nullptr);
-
-    g_hResultLabel = MakeStatic(hwnd, IDC_STATIC_RESULT_LBL, L"操作结果");
-
-    g_hResult = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP |
-        ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
-        0, 0, 10, 10, hwnd, (HMENU)IDC_EDIT_RESULT, g_hInst, nullptr);
-
-    g_hBtnCopy = MakeOwnerButton(hwnd, IDC_BTN_COPY, L"复制结果");
-    ::EnableWindow(g_hBtnCopy, FALSE);
-
-    g_hFooter = MakeStatic(hwnd, IDC_STATIC_FOOTER,
-        L"请牢记您设置的密码：下载恢复时需用同一密码，密码不存储于本地、无法找回");
+    PostJson(BuildDone(ok, canceled, isDownload, pwdWrong, r->error,
+                       resultText, resultLabel, stage, copyEnabled));
+    delete r;
+    PostJson(BuildBusy(false));
 }
 
-void ApplyFonts() {
-    HWND all[] = { g_hSubHeader, g_hPathLabel, g_hPathEdit, g_hBtnDetect, g_hBtnBrowse,
-                   g_hVerify, g_hPwdLabel, g_hPwdEdit, g_hPwdHint, g_hStage,
-                   g_hResultLabel, g_hBtnCopy, g_hFooter };
-    for (HWND h : all)
-        if (h) ::SendMessageW(h, WM_SETFONT, (WPARAM)g_fontBase, TRUE);
+// ---------------------------------------------------------------------------
+// WebView2 初始化
+// ---------------------------------------------------------------------------
+void InitWebView2(HWND hwnd) {
+    std::wstring udf = util::GetExeDir() + L"\\webview2_cache";
+    ::CreateDirectoryW(udf.c_str(), nullptr);
 
-    if (g_hHeader) ::SendMessageW(g_hHeader, WM_SETFONT, (WPARAM)g_fontTitle, TRUE);
-    if (g_hLog)    ::SendMessageW(g_hLog, WM_SETFONT, (WPARAM)g_fontMono, TRUE);
-    if (g_hResult) ::SendMessageW(g_hResult, WM_SETFONT, (WPARAM)g_fontMono, TRUE);
-    if (g_hBtnDetect)  ::SendMessageW(g_hBtnDetect, WM_SETFONT, (WPARAM)g_fontButton, TRUE);
-    if (g_hBtnBrowse)  ::SendMessageW(g_hBtnBrowse, WM_SETFONT, (WPARAM)g_fontButton, TRUE);
-    if (g_hBtnUpload)  ::SendMessageW(g_hBtnUpload, WM_SETFONT, (WPARAM)g_fontButton, TRUE);
-    if (g_hBtnDownload)::SendMessageW(g_hBtnDownload, WM_SETFONT, (WPARAM)g_fontButton, TRUE);
-    if (g_hBtnCopy)    ::SendMessageW(g_hBtnCopy, WM_SETFONT, (WPARAM)g_fontButton, TRUE);
+    HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+        nullptr, udf.c_str(), nullptr,
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            [hwnd](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
+                if (FAILED(hr)) {
+                    ::MessageBoxW(hwnd,
+                        L"WebView2 初始化失败：未能创建环境。\r\n请确认系统已安装 WebView2 Runtime（Edge 浏览器自带，或到微软官网下载安装）。",
+                        APP_TITLE_W, MB_OK | MB_ICONERROR);
+                    return hr;
+                }
+                env->CreateCoreWebView2Controller(hwnd,
+                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [hwnd](HRESULT hr, ICoreWebView2Controller* ctrl) -> HRESULT {
+                            if (FAILED(hr) || !ctrl) {
+                                ::MessageBoxW(hwnd, L"WebView2 初始化失败：未能创建控制器。",
+                                               APP_TITLE_W, MB_OK | MB_ICONERROR);
+                                return hr;
+                            }
+                            g_controller = ctrl;
+                            ctrl->get_CoreWebView2(&g_webview);
+                            if (!g_webview) return E_FAIL;
+
+                            // 精装环境选项：禁右键/DevTools/状态栏/缩放
+                            ComPtr<ICoreWebView2Settings> settings;
+                            if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
+                                settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_IsStatusBarEnabled(FALSE);
+                                settings->put_IsZoomControlEnabled(FALSE);
+                                settings->put_IsGeneralAutofillEnabled(FALSE);
+                                settings->put_IsPasswordAutosaveEnabled(FALSE);
+                                settings->put_AreBrowserExtensionsEnabled(FALSE);
+                            }
+                            ctrl->put_ZoomFactor(1.0);
+                            ctrl->put_IsVisible(TRUE);
+
+                            // 消息桥接
+                            EventRegistrationToken token{};
+                            g_webview->add_WebMessageReceived(
+                                Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                    [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                        LPWSTR raw = nullptr;
+                                        args->get_WebMessageAsString(&raw);
+                                        std::wstring msg(raw ? raw : L"");
+                                        if (raw) ::CoTaskMemFree(raw);
+                                        HandlePageMessage(msg);
+                                        return S_OK;
+                                    }).Get(), &token);
+
+                            // 铺满客户区
+                            RECT rc{};
+                            ::GetClientRect(hwnd, &rc);
+                            ctrl->put_Bounds(rc);
+
+                            // 载入内嵌 HTML
+                            std::wstring html = LoadAppHtml();
+                            if (!html.empty())
+                                g_webview->NavigateToString(html.c_str());
+
+                            return S_OK;
+                        }).Get());
+                return S_OK;
+            }).Get());
+    (void)hr;
 }
 
-void LayoutControls(HWND hwnd) {
-    RECT rc{};
-    ::GetClientRect(hwnd, &rc);
-    const int W = rc.right - rc.left;
-
-    const int M = S(20);            // 外边距
-    const int cardTop = g_titleH + S(8);
-    const int contentW = W - M * 2;
-    int y = cardTop + S(16);
-
-    auto place = [](HWND h, int x, int yy, int w, int hh) {
-        if (h) ::SetWindowPos(h, nullptr, x, yy, w, hh, SWP_NOZORDER | SWP_NOACTIVATE);
-    };
-
-    place(g_hHeader, M, y, contentW, S(30));
-    y += S(34);
-    place(g_hSubHeader, M, y, contentW, S(20));
-    y += S(30);
-
-    // 目录行
-    place(g_hPathLabel, M, y, contentW, S(18));
-    y += S(22);
-
-    const int btnW = S(92);
-    const int gap  = S(10);
-    const int editW = contentW - btnW * 2 - gap * 2;
-    place(g_hPathEdit, M, y, editW, S(28));
-    place(g_hBtnDetect, M + editW + gap, y, btnW, S(28));
-    place(g_hBtnBrowse, M + editW + gap + btnW + gap, y, btnW, S(28));
-    y += S(34);
-
-    place(g_hVerify, M, y, contentW, S(20));
-    y += S(28);
-
-    // 密码区
-    place(g_hPwdLabel, M, y, contentW, S(18));
-    y += S(22);
-    place(g_hPwdEdit, M, y, contentW, S(28));
-    y += S(34);
-    place(g_hPwdHint, M, y, contentW, S(18));
-    y += S(26);
-
-    // 两个主按钮并排
-    const int btnH = S(46);
-    const int twoGap = S(14);
-    const int halfW = (contentW - twoGap) / 2;
-    place(g_hBtnUpload, M, y, halfW, btnH);
-    place(g_hBtnDownload, M + halfW + twoGap, y, halfW, btnH);
-    y += btnH + S(16);
-
-    place(g_hProgress, M, y, contentW, S(16));
-    y += S(22);
-    place(g_hStage, M, y, contentW, S(18));
-    y += S(26);
-
-    // 日志区自适应高度
-    const int bottomBlock = S(20) + S(84) + S(10) + S(30) + S(10) + S(18) + S(16);
-    int logH = rc.bottom - y - bottomBlock;
-    if (logH < S(80)) logH = S(80);
-    place(g_hLog, M, y, contentW, logH);
-    y += logH + S(14);
-
-    place(g_hResultLabel, M, y, contentW, S(18));
-    y += S(22);
-    place(g_hResult, M, y, contentW, S(84));
-    y += S(84) + S(10);
-
-    place(g_hBtnCopy, M, y, S(100), S(30));
-    y += S(38);
-
-    place(g_hFooter, M, y, contentW, S(18));
-}
-
-void CreateFonts() {
-    auto mk = [&](int pt, int weight, const wchar_t* face) -> HFONT {
-        LOGFONTW lf{};
-        lf.lfHeight = -::MulDiv(pt, g_dpi, 72);
-        lf.lfWeight = weight;
-        lf.lfCharSet = DEFAULT_CHARSET;
-        lf.lfQuality = CLEARTYPE_QUALITY;
-        ::wcscpy_s(lf.lfFaceName, face);
-        HFONT f = ::CreateFontIndirectW(&lf);
-        if (!f) f = (HFONT)::GetStockObject(DEFAULT_GUI_FONT);
-        return f;
-    };
-
-    g_fontBase    = mk(9,  FW_NORMAL,   L"Microsoft YaHei UI");
-    g_fontTitle   = mk(16, FW_SEMIBOLD, L"Microsoft YaHei UI");
-    g_fontTitleBar= mk(12, FW_SEMIBOLD, L"Microsoft YaHei UI");
-    g_fontButton  = mk(11, FW_SEMIBOLD, L"Microsoft YaHei UI");
-    g_fontMono    = mk(9,  FW_NORMAL,   L"Consolas");
-}
-
-void DestroyFonts() {
-    HFONT fs[] = { g_fontBase, g_fontTitle, g_fontTitleBar, g_fontButton, g_fontMono };
-    for (HFONT f : fs)
-        if (f && f != (HFONT)::GetStockObject(DEFAULT_GUI_FONT)) ::DeleteObject(f);
-    g_fontBase = g_fontTitle = g_fontTitleBar = g_fontButton = g_fontMono = nullptr;
-}
-
+// ---------------------------------------------------------------------------
 // 圆角窗口区域
+// ---------------------------------------------------------------------------
 void UpdateWindowRgn(HWND hwnd) {
+    if (!g_useRgn) return;
     RECT rc{};
     ::GetClientRect(hwnd, &rc);
     HRGN rgn = ::CreateRoundRectRgn(rc.left, rc.top, rc.right, rc.bottom, S(16), S(16));
@@ -676,137 +576,6 @@ void UpdateWindowRgn(HWND hwnd) {
         ::SetWindowRgn(hwnd, rgn, TRUE);
         ::DeleteObject(rgn);
     }
-}
-
-// ---------------------------------------------------------------------------
-// 背景绘制（渐变 + 卡片 + 标题栏）
-// ---------------------------------------------------------------------------
-void PaintBackground(HDC dc, HWND hwnd) {
-    RECT rc{};
-    ::GetClientRect(hwnd, &rc);
-
-    // 渐变背景
-    VGrad3(dc, rc, kColBgTop, kColBgMid, kColBgBottom);
-
-    // 柔和光斑（二次元氛围）
-    HBRUSH b1 = ::CreateSolidBrush(RGB(255, 236, 246));
-    HBRUSH b2 = ::CreateSolidBrush(RGB(226, 214, 255));
-    HRGN c1 = ::CreateEllipticRgn(rc.right - S(160), S(-60), rc.right + S(40), S(160));
-    HRGN c2 = ::CreateEllipticRgn(S(-80), rc.bottom - S(180), S(160), rc.bottom + S(40));
-    if (c1) { ::FillRgn(dc, c1, b1); ::DeleteObject(c1); }
-    if (c2) { ::FillRgn(dc, c2, b2); ::DeleteObject(c2); }
-    ::DeleteObject(b1);
-    ::DeleteObject(b2);
-
-    // 内容卡片（白底圆角）
-    const int M = S(20);
-    RECT card = { M, g_titleH + S(8), rc.right - M, rc.bottom - S(10) };
-    FillRoundRect(dc, card, S(18), RGB(255, 252, 255), RGB(235, 225, 245));
-
-    // 标题栏文字
-    ::SetBkMode(dc, TRANSPARENT);
-    ::SetTextColor(dc, kColText);
-    HGDIOBJ of = ::SelectObject(dc, g_fontTitleBar);
-    RECT tr = { S(18), S(6), rc.right, g_titleH };
-    ::DrawTextW(dc, APP_TITLE_W, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    ::SelectObject(dc, of);
-
-    // 标题栏按钮
-    DrawCaptionButton(dc, CloseRect(rc.right), g_closeHot, true);
-    DrawCaptionButton(dc, MinRect(rc.right), g_minHot, false);
-}
-
-// ---------------------------------------------------------------------------
-// 结果处理
-// ---------------------------------------------------------------------------
-void HandleDetectDone(std::vector<lolfind::Candidate>* results) {
-    if (!results) return;
-
-    if (results->empty()) {
-        AppendLog(L"没有找到包含 " MARKER_FILE_W L" 的 saves 目录，请点「手动选择」指定");
-        SetVerifyState(2, L"× 自动检测未找到目录，请手动选择");
-    } else {
-        if (results->size() > 1) {
-            AppendLog(L"共找到 " + std::to_wstring(results->size()) + L" 个候选目录：");
-            for (size_t i = 0; i < results->size(); ++i) {
-                AppendLog(L"    " + std::to_wstring(i + 1) + L". " +
-                          (*results)[i].savesPath + L"  （来源：" + (*results)[i].source + L"）");
-            }
-            AppendLog(L"已自动选用第 1 个，若不正确请点「手动选择」更换");
-        } else {
-            AppendLog(L"已找到：" + (*results)[0].savesPath +
-                      L"  （来源：" + (*results)[0].source + L"）");
-        }
-        ::SetWindowTextW(g_hPathEdit, (*results)[0].savesPath.c_str());
-    }
-
-    delete results;
-    RefreshVerify();
-    PostProgress(0, L"就绪");
-    ::PostMessageW(g_hMain, WM_APP_SET_BUSY, 0, 0);
-}
-
-void HandleUploadDone(uploader::Outcome* r) {
-    if (!r) return;
-
-    if (r->canceled) {
-        AppendLog(L"操作已取消");
-        ::SetWindowTextW(g_hStage, L"已取消");
-        ::SendMessageW(g_hProgress, PBM_SETPOS, 0, 0);
-    } else if (!r->ok) {
-        if (r->passwordWrong) {
-            AppendLog(L"密码错误，无法解密压缩包");
-            ::SetWindowTextW(g_hStage, L"密码错误");
-            ::MessageBoxW(g_hMain, L"密码不正确，无法解密该压缩包。\r\n请确认下载时使用的密码与上传时一致。",
-                          L"密码错误", MB_OK | MB_ICONWARNING);
-        } else {
-            AppendLog(L"操作失败：" + r->error);
-            ::SetWindowTextW(g_hStage, r->isDownload ? L"下载失败" : L"上传失败");
-            ::MessageBoxW(g_hMain, r->error.c_str(), r->isDownload ? L"下载失败" : L"上传失败",
-                          MB_OK | MB_ICONWARNING);
-        }
-    } else if (r->isDownload) {
-        std::wstring text;
-        text += L"已解压到： " + GetPathFromEdit() + L"\r\n";
-        text += L"恢复文件： " + std::to_wstring((unsigned long long)r->extractedFiles) + L" 个\r\n";
-        text += L"下载大小： " + util::FormatSize(r->downloadedBytes) + L"\r\n";
-        text += L"解压大小： " + util::FormatSize(r->rawBytes);
-
-        g_lastResultText = text;
-        ::SetWindowTextW(g_hResult, text.c_str());
-        ::EnableWindow(g_hBtnCopy, TRUE);
-        ::SetWindowTextW(g_hStage, L"下载解压完成");
-        ::SendMessageW(g_hProgress, PBM_SETPOS, 1000, 0);
-        ::SetWindowTextW(g_hResultLabel, L"下载结果");
-        AppendLog(L"===== 下载并解压完成，文件已覆盖至目标目录 =====");
-    } else {
-        std::wstring text;
-        text += L"压缩密码： " + r->password + L"\r\n";
-        text += L"对象 Key： " + r->objectKey + L"\r\n";
-        if (!r->downloadUrl.empty())
-            text += L"下载链接： " + r->downloadUrl + L"\r\n";
-        if (!r->expireText.empty())
-            text += L"有效期：   " + r->expireText + L"\r\n";
-        text += L"压缩包大小：" + util::FormatSize(r->zipBytes) +
-                L"（原始 " + util::FormatSize(r->rawBytes) + L"，共 " +
-                std::to_wstring((unsigned long long)r->fileCount) + L" 个文件）";
-
-        g_lastResultText = text;
-        ::SetWindowTextW(g_hResult, text.c_str());
-        ::EnableWindow(g_hBtnCopy, TRUE);
-        ::SetWindowTextW(g_hStage, L"上传完成");
-        ::SetWindowTextW(g_hResultLabel, L"上传结果（请务必保存密码）");
-        ::SendMessageW(g_hProgress, PBM_SETPOS, 1000, 0);
-
-        AppendLog(L"===== 上传成功，请立即保存下方密码 =====");
-        g_uploadDone.store(true);
-
-        util::CopyTextToClipboard(g_hMain, text);
-        AppendLog(L"结果已自动复制到剪贴板");
-    }
-
-    delete r;
-    ::PostMessageW(g_hMain, WM_APP_SET_BUSY, 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -821,17 +590,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_dpi <= 0) g_dpi = 96;
         g_titleH = S(42);
 
-        CreateFonts();
-        CreateControls(hwnd);
-        ApplyFonts();
-        LayoutControls(hwnd);
+        // Win11：用 DWM 原生圆角（自带阴影）；Win10：用 rgn + CS_DROPSHADOW
+        int pref = 2; // DWMWCP_ROUND
+        if (SUCCEEDED(::DwmSetWindowAttribute(hwnd, 33 /*DWMWA_WINDOW_CORNER_PREFERENCE*/,
+                                             &pref, sizeof(pref))))
+            g_useRgn = false;
+
         UpdateWindowRgn(hwnd);
 
-        AppendLog(APP_TITLE_W L" v" APP_VERSION_W L" 已启动");
-        AppendLog(L"后端地址：" + config::BackendBaseUrl);
-        AppendLog(L"判定依据：目录中必须存在 " MARKER_FILE_W);
-
-        // 启动即自动检测
+        // 启动即初始化 WebView2 + 检测目录 + 检测后端连接
+        InitWebView2(hwnd);
+        std::thread(ConnThread).detach();
         std::thread(DetectThread).detach();
         return 0;
     }
@@ -839,24 +608,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DPICHANGED: {
         g_dpi = HIWORD(wp);
         g_titleH = S(42);
-        DestroyFonts();
-        CreateFonts();
-        ApplyFonts();
-
         RECT* nr = (RECT*)lp;
         ::SetWindowPos(hwnd, nullptr, nr->left, nr->top,
                        nr->right - nr->left, nr->bottom - nr->top,
                        SWP_NOZORDER | SWP_NOACTIVATE);
-        LayoutControls(hwnd);
         UpdateWindowRgn(hwnd);
-        ::InvalidateRect(hwnd, nullptr, TRUE);
         return 0;
     }
 
     case WM_SIZE:
-        LayoutControls(hwnd);
+        if (g_controller) {
+            RECT rc{};
+            ::GetClientRect(hwnd, &rc);
+            g_controller->put_Bounds(rc);
+        }
         UpdateWindowRgn(hwnd);
-        ::InvalidateRect(hwnd, nullptr, TRUE);
         return 0;
 
     case WM_GETMINMAXINFO: {
@@ -866,212 +632,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
-    case WM_ERASEBKGND: {
-        PaintBackground((HDC)wp, hwnd);
-        return 1;
-    }
-
-    case WM_CTLCOLORSTATIC: {
-        HDC dc = (HDC)wp;
-        HWND ctl = (HWND)lp;
-        ::SetBkMode(dc, OPAQUE);
-        ::SetBkColor(dc, RGB(255, 252, 255));
-        if (ctl == g_hHeader) {
-            ::SetTextColor(dc, kColText);
-        } else if (ctl == g_hSubHeader || ctl == g_hFooter || ctl == g_hStage) {
-            ::SetTextColor(dc, kColSubText);
-        } else if (ctl == g_hVerify) {
-            const LONG_PTR st = ::GetWindowLongPtrW(g_hVerify, GWLP_USERDATA);
-            ::SetTextColor(dc, st == 1 ? kColOk : (st == 2 ? kColWarn : kColSubText));
-        } else if (ctl == g_hPwdHint) {
-            const LONG_PTR st = ::GetWindowLongPtrW(g_hPwdHint, GWLP_USERDATA);
-            ::SetTextColor(dc, st == 1 ? kColOk : (st == 2 ? kColWarn : kColSubText));
-        } else {
-            ::SetTextColor(dc, kColText);
-        }
-        return (LRESULT)g_brushCard;
-    }
-
-    case WM_CTLCOLOREDIT: {
-        HDC dc = (HDC)wp;
-        ::SetTextColor(dc, kColText);
-        ::SetBkColor(dc, RGB(255, 255, 255));
-        return (LRESULT)g_brushCard;
-    }
-
-    case WM_DRAWITEM: {
-        LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lp;
-        if (dis->CtlType != ODT_BUTTON) break;
-        const bool disabled = (dis->itemState & ODS_DISABLED) != 0;
-        const bool pressed  = (dis->itemState & ODS_SELECTED) != 0;
-
-        wchar_t text[128]{};
-        ::GetWindowTextW(dis->hwndItem, text, 128);
-        RECT r = dis->rcItem;
-
-        if (dis->CtlID == IDC_BTN_UPLOAD) {
-            DrawGradientButton(dis->hDC, r, pressed, disabled,
-                               kUpTop, kUpBot, kUpTopH, kUpBotH, text, g_fontButton);
-        } else if (dis->CtlID == IDC_BTN_DOWNLOAD) {
-            DrawGradientButton(dis->hDC, r, pressed, disabled,
-                               kDlTop, kDlBot, kDlTopH, kDlBotH, text, g_fontButton);
-        } else if (dis->CtlID == IDC_BTN_DETECT || dis->CtlID == IDC_BTN_BROWSE ||
-                   dis->CtlID == IDC_BTN_COPY) {
-            DrawGhostButton(dis->hDC, r, pressed, disabled, text, g_fontButton);
-        }
-        return TRUE;
-    }
-
-    case WM_NCHITTEST: {
-        POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-        ::ScreenToClient(hwnd, &pt);
-        RECT rc{};
-        ::GetClientRect(hwnd, &rc);
-        RECT cr = CloseRect(rc.right);
-        RECT mr = MinRect(rc.right);
-        if (pt.y < g_titleH) {
-            if (::PtInRect(&cr, pt)) return HTCLIENT;
-            if (::PtInRect(&mr, pt))   return HTCLIENT;
-            return HTCAPTION;
-        }
-        break;
-    }
-
-    case WM_LBUTTONDOWN: {
-        POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-        RECT rc{};
-        ::GetClientRect(hwnd, &rc);
-        RECT cr = CloseRect(rc.right);
-        RECT mr = MinRect(rc.right);
-        if (::PtInRect(&cr, pt)) {
-            ::SendMessageW(hwnd, WM_CLOSE, 0, 0);
-            return 0;
-        }
-        if (::PtInRect(&mr, pt)) {
-            ::ShowWindow(hwnd, SW_MINIMIZE);
-            return 0;
-        }
-        break;
-    }
-
-    case WM_MOUSEMOVE: {
-        POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-        RECT rc{};
-        ::GetClientRect(hwnd, &rc);
-        RECT cr = CloseRect(rc.right);
-        RECT mr = MinRect(rc.right);
-        const bool ch = ::PtInRect(&cr, pt) != FALSE;
-        const bool mh = ::PtInRect(&mr, pt) != FALSE;
-        if (ch != g_closeHot) { g_closeHot = ch; ::InvalidateRect(hwnd, &cr, FALSE); }
-        if (mh != g_minHot)   { g_minHot   = mh; ::InvalidateRect(hwnd, &mr, FALSE); }
-        if (!g_titleTracking) {
-            TRACKMOUSEEVENT tme{ sizeof(tme) };
-            tme.dwFlags = TME_LEAVE;
-            tme.hwndTrack = hwnd;
-            ::TrackMouseEvent(&tme);
-            g_titleTracking = true;
-        }
-        return 0;
-    }
-
-    case WM_MOUSELEAVE:
-        g_titleTracking = false;
-        if (g_closeHot) { g_closeHot = false; RECT rc{}; ::GetClientRect(hwnd, &rc); RECT cr = CloseRect(rc.right); ::InvalidateRect(hwnd, &cr, FALSE); }
-        if (g_minHot)   { g_minHot   = false; RECT rc{}; ::GetClientRect(hwnd, &rc); RECT mr = MinRect(rc.right); ::InvalidateRect(hwnd, &mr, FALSE); }
-        return 0;
-
-    case WM_COMMAND: {
-        const int id   = LOWORD(wp);
-        const int code = HIWORD(wp);
-
-        if (id == IDC_EDIT_PATH && code == EN_CHANGE) {
-            if (!g_busy.load()) RefreshVerify();
-            return 0;
-        }
-        if (id == IDC_EDIT_PWD && code == EN_CHANGE) {
-            FilterPasswordEdit();
-            return 0;
-        }
-
-        if (code != BN_CLICKED) break;
-
-        switch (id) {
-        case IDC_BTN_DETECT:
-            if (!g_busy.load()) {
-                ::SetWindowTextW(g_hResult, L"");
-                ::EnableWindow(g_hBtnCopy, FALSE);
-                std::thread(DetectThread).detach();
-            }
-            return 0;
-
-        case IDC_BTN_BROWSE: {
-            if (g_busy.load()) return 0;
-            const std::wstring p = PickFolder(hwnd);
-            if (!p.empty()) {
-                ::SetWindowTextW(g_hPathEdit, p.c_str());
-                AppendLog(L"已手动选择：" + p);
-                if (!lolfind::HasMarker(p))
-                    AppendLog(L"注意：该目录里没有 " MARKER_FILE_W L"，无法上传");
-            }
-            return 0;
-        }
-
-        case IDC_BTN_UPLOAD: {
-            if (g_busy.load()) return 0;
-            const std::wstring dir = GetPathFromEdit();
-            const std::wstring pwd = GetPasswordFromEdit();
-            if (dir.empty() || !lolfind::HasMarker(dir)) {
-                ::MessageBoxW(hwnd, L"当前目录无效，必须是包含 " MARKER_FILE_W L" 的 saves 目录",
-                              L"无法上传", MB_OK | MB_ICONWARNING);
-                return 0;
-            }
-            if (!util::IsValidPassword(pwd)) {
-                ::MessageBoxW(hwnd, L"请先在密码框输入 4-24 位字母或数字",
-                              L"缺少密码", MB_OK | MB_ICONWARNING);
-                return 0;
-            }
-            ::SetWindowTextW(g_hResult, L"");
-            ::EnableWindow(g_hBtnCopy, FALSE);
-            g_uploadDone.store(false);
-            std::thread(UploadThread, dir, pwd).detach();
-            return 0;
-        }
-
-        case IDC_BTN_DOWNLOAD: {
-            if (g_busy.load()) return 0;
-            const std::wstring dir = GetPathFromEdit();
-            const std::wstring pwd = GetPasswordFromEdit();
-            if (dir.empty() || !util::DirectoryExists(dir)) {
-                ::MessageBoxW(hwnd, L"请先选择要解压到的 saves 目录",
-                              L"缺少目录", MB_OK | MB_ICONWARNING);
-                return 0;
-            }
-            if (!util::IsValidPassword(pwd)) {
-                ::MessageBoxW(hwnd, L"请先在密码框输入 4-24 位字母或数字",
-                              L"缺少密码", MB_OK | MB_ICONWARNING);
-                return 0;
-            }
-            ::SetWindowTextW(g_hResult, L"");
-            ::EnableWindow(g_hBtnCopy, FALSE);
-            std::thread(DownloadThread, dir, pwd).detach();
-            return 0;
-        }
-
-        case IDC_BTN_COPY:
-            if (!g_lastResultText.empty()) {
-                util::CopyTextToClipboard(hwnd, g_lastResultText);
-                AppendLog(L"结果已复制到剪贴板");
-            }
-            return 0;
-
-        default: break;
-        }
-        break;
-    }
-
     case WM_APP_LOG: {
         auto* s = (std::wstring*)lp;
-        if (s) { AppendLog(*s); delete s; }
+        if (s) { PostJson(BuildLog(*s)); delete s; }
         return 0;
     }
 
@@ -1079,27 +642,55 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         int permille = (int)wp;
         if (permille < 0) permille = 0;
         if (permille > 1000) permille = 1000;
-        ::SendMessageW(g_hProgress, PBM_SETPOS, (WPARAM)permille, 0);
-
+        std::wstring stage;
         auto* s = (std::wstring*)lp;
-        if (s) {
-            if (!s->empty()) ::SetWindowTextW(g_hStage, s->c_str());
-            delete s;
+        if (s) { stage = *s; delete s; }
+        PostJson(BuildProgress(permille, stage));
+        return 0;
+    }
+
+    case WM_APP_DETECT_DONE: {
+        auto* results = (std::vector<lolfind::Candidate>*)lp;
+        std::wstring path; int vs = 0; std::wstring vt;
+        if (!results || results->empty()) {
+            vs = 2; vt = L"× 自动检测未找到目录，请手动选择";
+        } else {
+            path = (*results)[0].savesPath;
+            vs = lolfind::HasMarker(path) ? 1 : 2;
+            vt = vs == 1 ? (L"√ 校验通过，已找到 " MARKER_FILE_W)
+                         : (L"× 该目录未通过校验");
+        }
+        delete results;
+        PostJson(BuildDetectDone(path, vs, vt));
+        PostJson(BuildBusy(false));
+        return 0;
+    }
+
+    case WM_APP_UPLOAD_DONE:
+        HandleOutcome((uploader::Outcome*)lp);
+        return 0;
+
+    case WM_APP_SET_BUSY:
+        PostJson(BuildBusy(wp != 0));
+        return 0;
+
+    case WM_APP_CONN: {
+        auto* r = (uploader::HealthResult*)lp;
+        if (r) {
+            PostJson(BuildConn(r->ok ? 1 : 2, (r->ok ? L"✓ " : L"× ") + r->message));
+            delete r;
         }
         return 0;
     }
 
-    case WM_APP_DETECT_DONE:
-        HandleDetectDone((std::vector<lolfind::Candidate>*)lp);
+    case WM_APP_PWD_CHECK: {
+        auto* p = (PwdCheckResult*)lp;
+        if (p) {
+            PostJson(BuildPasswordChecked(p->password, p->exists));
+            delete p;
+        }
         return 0;
-
-    case WM_APP_UPLOAD_DONE:
-        HandleUploadDone((uploader::Outcome*)lp);
-        return 0;
-
-    case WM_APP_SET_BUSY:
-        SetBusy(wp != 0);
-        return 0;
+    }
 
     case WM_CLOSE:
         if (g_busy.load()) {
@@ -1161,6 +752,9 @@ void EnableDpiAwareness() {
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
     g_hInst = hInst;
 
+    // 预读取软件图标（base64），待页面 ready 后注入头部
+    g_appIconB64 = LoadAppIconBase64();
+
     EnableDpiAwareness();
     ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
@@ -1181,18 +775,15 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
         return 0;
     }
 
-    g_brushBg   = ::CreateSolidBrush(kColBgTop);
-    g_brushCard = ::CreateSolidBrush(RGB(255, 252, 255));
-
     WNDCLASSEXW wc{ sizeof(wc) };
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.style         = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
     wc.hCursor       = ::LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = g_brushCard;
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"HanbotUploaderWndClass";
-    wc.hIcon         = ::LoadIconW(nullptr, IDI_APPLICATION);
-    wc.hIconSm       = ::LoadIconW(nullptr, IDI_APPLICATION);
+    wc.hIcon         = ::LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APP_ICON));
+    wc.hIconSm       = ::LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APP_ICON));
 
     if (!::RegisterClassExW(&wc)) {
         ::MessageBoxW(nullptr, L"窗口注册失败", APP_TITLE_W, MB_OK | MB_ICONERROR);
@@ -1209,18 +800,36 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
         }
     }
 
-    RECT wr{ 0, 0, S(760), S(720) };
+    // 期望的客户区尺寸（逻辑像素，S() 按 DPI 放大）。
+    // 高度给到 800：页面内容（连接条 + 目录 + 密码 + 双按钮 + 进度 + 5 行日志 + 结果区 + 页脚）
+    // 大约需要 700px，留一点余量，避免下半部被挤压后互相重叠。
+    RECT wr{ 0, 0, S(760), S(800) };
     ::AdjustWindowRectEx(&wr, WS_POPUP | WS_SYSMENU, FALSE, 0);
 
-    const int winW = wr.right - wr.left;
-    const int winH = wr.bottom - wr.top;
-    const int x = (::GetSystemMetrics(SM_CXSCREEN) - winW) / 2;
-    const int y = (::GetSystemMetrics(SM_CYSCREEN) - winH) / 2;
+    int winW = wr.right - wr.left;
+    int winH = wr.bottom - wr.top;
+
+    // 夹到桌面工作区内：150% / 175% 缩放的小屏笔记本上，S(800) 可能比屏幕还高，
+    // 不夹取的话窗口会跑出屏幕，页面被压扁，控件就叠在一起了。
+    int x = 0, y = 0;
+    RECT wa{};
+    if (::SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0) &&
+        wa.right > wa.left && wa.bottom > wa.top) {
+        const int availW = wa.right - wa.left;
+        const int availH = wa.bottom - wa.top;
+        if (winW > availW) winW = availW;
+        if (winH > availH) winH = availH;
+        x = wa.left + (availW - winW) / 2;
+        y = wa.top + (availH - winH) / 2;
+    } else {
+        x = (::GetSystemMetrics(SM_CXSCREEN) - winW) / 2;
+        y = (::GetSystemMetrics(SM_CYSCREEN) - winH) / 2;
+    }
 
     HWND hwnd = ::CreateWindowExW(0, wc.lpszClassName, APP_TITLE_W,
                                   WS_POPUP | WS_SYSMENU,
-                                  x > 0 ? x : CW_USEDEFAULT,
-                                  y > 0 ? y : CW_USEDEFAULT,
+                                  x >= 0 ? x : CW_USEDEFAULT,
+                                  y >= 0 ? y : CW_USEDEFAULT,
                                   winW, winH,
                                   nullptr, nullptr, hInst, nullptr);
     if (!hwnd) {
@@ -1239,10 +848,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
         }
     }
 
-    DestroyFonts();
-    if (g_brushBg)   ::DeleteObject(g_brushBg);
-    if (g_brushCard) ::DeleteObject(g_brushCard);
-    if (mutex)       ::CloseHandle(mutex);
+    if (mutex) ::CloseHandle(mutex);
     ::CoUninitialize();
 
     return (int)msg.wParam;

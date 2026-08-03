@@ -178,7 +178,8 @@ Response Request(const std::wstring& method,
 
     const UrlParts parts = CrackUrl(url);
     if (!parts.ok) {
-        res.error = L"地址格式不正确：" + url;
+        // 不回显 url：错误信息会显示到界面日志里，避免暴露服务端地址。
+        res.error = L"请求地址格式不正确";
         return res;
     }
 
@@ -274,7 +275,7 @@ Response UploadMultipartFile(const std::wstring& url,
     // ---- 建立连接 ----
     const UrlParts parts = CrackUrl(url);
     if (!parts.ok) {
-        res.error = L"上传地址格式不正确：" + url;
+        res.error = L"上传地址格式不正确";
         return res;
     }
 
@@ -389,7 +390,7 @@ Response DownloadToFile(const std::wstring& url,
 
     const UrlParts parts = CrackUrl(url);
     if (!parts.ok) {
-        res.error = L"下载地址格式不正确：" + url;
+        res.error = L"下载地址格式不正确";
         return res;
     }
 

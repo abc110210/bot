@@ -54,4 +54,18 @@ Outcome Download(const std::wstring& savesDir,
                  const ProgressFn& progress,
                  const std::atomic<bool>* cancel);
 
+// 后端连通性检测：调用 GET /api/health
+struct HealthResult {
+    bool         reachable = false;   // 网络是否连通（收到 HTTP 响应）
+    bool         ok = false;          // 业务状态是否正常（ok && configured）
+    std::wstring message;             // 给用户的提示文案
+};
+
+HealthResult CheckBackend(const LogFn& log);
+
+// 检查某密码是否已被后端占用（用于「随机生成密码」或「手动输入密码」前核对，
+// 确保每份存档对应一个独立密码，避免按密码取回时拿到错误存档）。
+// 网络/鉴权异常时返回 false（不拦截），最终由 /api/report 的密码唯一校验兜底。
+bool PasswordExists(const std::wstring& password);
+
 } // namespace uploader

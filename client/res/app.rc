@@ -13,12 +13,13 @@
 IDR_APP_MANIFEST RT_MANIFEST "app.manifest"
 
 /////////////////////////////////////////////////////////////////////////////
-// 图标（可选）
-//   如果以后放了 res/app.ico，把下面这行的注释去掉即可，
-//   同时把 main.cpp 里的 LoadIconW(nullptr, IDI_APPLICATION)
-//   换成 LoadIconW(g_hInst, MAKEINTRESOURCEW(IDI_APP_ICON))
+// 图标
+//   IDI_APP_ICON：窗口标题栏 / 任务栏图标（来自 app.ico）
+//   IDR_APP_ICON_PNG：软件图标原图（PNG），运行时由 main.cpp 读取并
+//      base64 注入 WebView2 页面头部（NavigateToString 无法引用外部文件）
 /////////////////////////////////////////////////////////////////////////////
-// IDI_APP_ICON ICON "app.ico"
+IDI_APP_ICON ICON "app.ico"
+IDR_APP_ICON_PNG RCDATA "app_icon.png"
 
 /////////////////////////////////////////////////////////////////////////////
 // 版本信息
@@ -41,12 +42,12 @@ BEGIN
         BLOCK "080404b0"          // 中文（简体） + Unicode
         BEGIN
             VALUE "CompanyName",      "Hanbot"
-            VALUE "FileDescription",  "Hanbot 存档打包上传器"
+            VALUE "FileDescription",  "Hanbot缓存存储器"
             VALUE "FileVersion",      "1.0.0.0"
             VALUE "InternalName",     "HanbotSavesUploader"
             VALUE "LegalCopyright",   "Copyright (C) 2026 Hanbot"
             VALUE "OriginalFilename", "HanbotSavesUploader.exe"
-            VALUE "ProductName",      "Hanbot 存档打包上传器"
+            VALUE "ProductName",      "Hanbot缓存存储器"
             VALUE "ProductVersion",   "1.0.0.0"
         END
     END

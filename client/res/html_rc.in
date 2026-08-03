@@ -1,0 +1,2 @@
+// 由 CMake 在配置阶段生成：把 webui/index.html 以 HTML 资源形式内嵌进 exe
+IDR_APP_HTML HTML "@HTML_RC_PATH@"

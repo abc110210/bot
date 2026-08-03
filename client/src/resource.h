@@ -7,6 +7,8 @@
 // ---- 资源 ----
 #define IDI_APP_ICON              101
 #define IDR_APP_MANIFEST            1   // CREATEPROCESS_MANIFEST_RESOURCE_ID
+#define IDR_APP_HTML              200   // 内嵌的 webui/index.html（WebView2 渲染用）
+#define IDR_APP_ICON_PNG          202   // 软件图标（PNG），运行时 base64 注入页面头部
 
 // ---- 静态文本 ----
 #define IDC_STATIC_HEADER        1001
@@ -43,6 +45,9 @@
 // ---- 页脚 ----
 #define IDC_STATIC_FOOTER        1016
 
+// ---- 后端连接状态 ----
+#define IDC_STATIC_CONN          1021
+
 // ---------------------------------------------------------------------------
 // 自定义消息（工作线程 -> UI 线程）
 //   LPARAM 若为 new 出来的对象，由 UI 线程负责 delete
@@ -52,3 +57,5 @@
 #define WM_APP_DETECT_DONE   (WM_APP + 3)   // LPARAM: new std::vector<Candidate>*
 #define WM_APP_UPLOAD_DONE   (WM_APP + 4)   // LPARAM: new uploader::Outcome*
 #define WM_APP_SET_BUSY      (WM_APP + 5)   // WPARAM: 1=忙, 0=空闲
+#define WM_APP_CONN          (WM_APP + 6)   // LPARAM: new uploader::HealthResult*
+#define WM_APP_PWD_CHECK     (WM_APP + 7)   // LPARAM: new PwdCheckResult*（密码查重结果）
