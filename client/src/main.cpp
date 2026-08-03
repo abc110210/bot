@@ -318,14 +318,77 @@ void CheckPwdThread(std::wstring password) {
 std::wstring LoadAppHtml() {
     // RC 里 HTML 是预定义类型 RT_HTML(23)，必须用宏而非字符串 "HTML" 才能匹配
     HRSRC hRes = ::FindResourceW(g_hInst, MAKEINTRESOURCE(IDR_APP_HTML), RT_HTML);
-    if (!hRes) return L"";
+    if (!hRes) {
+        ::OutputDebugStringW(L"[LoadAppHtml] FindResourceW(ID=IDR_APP_HTML, RT_HTML) 失败，资源未嵌入 exe。\n");
+        return L"";
+    }
     HGLOBAL hGlob = ::LoadResource(g_hInst, hRes);
-    if (!hGlob) return L"";
+    if (!hGlob) {
+        ::OutputDebugStringW(L"[LoadAppHtml] LoadResource 失败。\n");
+        return L"";
+    }
     DWORD size = ::SizeofResource(g_hInst, hRes);
+    if (size == 0) {
+        ::OutputDebugStringW(L"[LoadAppHtml] SizeofResource 返回 0，HTML 资源为空。\n");
+        return L"";
+    }
     const char* data = (const char*)::LockResource(hGlob);
-    if (!data) return L"";
+    if (!data) {
+        ::OutputDebugStringW(L"[LoadAppHtml] LockResource 失败。\n");
+        return L"";
+    }
     std::string utf8(data, (size_t)size);
-    return util::Utf8ToWide(utf8);
+    std::wstring html = util::Utf8ToWide(utf8);
+    if (html.empty()) {
+        ::OutputDebugStringW(L"[LoadAppHtml] Utf8ToWide 结果为空。\n");
+    } else {
+        std::wstring msg = L"[LoadAppHtml] 成功读取 HTML，共 " + std::to_wstring(html.size()) + L" 个宽字符。\n";
+        ::OutputDebugStringW(msg.c_str());
+    }
+    return html;
+}
+
+// 将 HTML 写入临时文件并返回 file:// URI；失败返回空串
+static std::wstring WriteHtmlToTemp(const std::wstring& html) {
+    wchar_t tmpDir[MAX_PATH];
+    if (!::GetTempPathW(MAX_PATH, tmpDir)) return L"";
+    wchar_t tmpFile[MAX_PATH];
+    if (!::GetTempFileNameW(tmpDir, L"hbui", 0, tmpFile)) return L"";
+
+    std::wstring path(tmpFile);
+    auto pos = path.rfind(L'.');
+    if (pos != std::wstring::npos) path = path.substr(0, pos) + L".html";
+    else path += L".html";
+
+    std::string u8 = util::WideToUtf8(html);
+    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return L"";
+    DWORD written = 0;
+    BOOL ok = ::WriteFile(h, u8.data(), (DWORD)u8.size(), &written, nullptr);
+    ::CloseHandle(h);
+    if (!ok || written != u8.size()) return L"";
+
+    std::wstring url = L"file:///";
+    for (wchar_t c : path) url.push_back(c == L'\\' ? L'/' : c);
+    return url;
+}
+
+// 先尝试 NavigateToString；若失败，把 HTML 落盘临时文件再用 file:// 导航
+static HRESULT NavigateWithFallback(ICoreWebView2* webview, const std::wstring& html) {
+    HRESULT hr = webview->NavigateToString(html.c_str());
+    if (SUCCEEDED(hr)) return hr;
+
+    ::OutputDebugStringW(L"[WebView2] NavigateToString 失败，尝试写入临时文件用 file:// 回退。\n");
+    std::wstring url = WriteHtmlToTemp(html);
+    if (!url.empty()) {
+        hr = webview->Navigate(url.c_str());
+        if (FAILED(hr)) {
+            ::OutputDebugStringW(L"[WebView2] file:// 回退也失败。\n");
+        }
+    } else {
+        ::OutputDebugStringW(L"[WebView2] 无法创建临时 HTML 文件。\n");
+    }
+    return hr;
 }
 
 // ---------------------------------------------------------------------------
@@ -569,8 +632,19 @@ void InitWebView2(HWND hwnd) {
 
                             // 载入内嵌 HTML
                             std::wstring html = LoadAppHtml();
-                            if (!html.empty())
-                                g_webview->NavigateToString(html.c_str());
+                            HRESULT navHr = E_FAIL;
+                            if (!html.empty()) {
+                                navHr = NavigateWithFallback(g_webview.Get(), html);
+                            }
+                            if (html.empty() || FAILED(navHr)) {
+                                std::wstring err = L"未能加载应用界面。\n";
+                                if (html.empty())
+                                    err += L"原因：无法从 exe 内嵌资源读取 HTML（IDR_APP_HTML 可能缺失或为空）。\n";
+                                else
+                                    err += L"原因：NavigateToString 与临时文件回退均失败。\n";
+                                err += L"请尝试重新构建，或联系技术支持。";
+                                ::MessageBoxW(hwnd, err.c_str(), APP_TITLE_W, MB_OK | MB_ICONERROR);
+                            }
 
                             return S_OK;
                         }).Get());
@@ -613,8 +687,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         UpdateWindowRgn(hwnd);
 
-        // 启动即初始化 WebView2 + 检测目录 + 检测后端连接
-        InitWebView2(hwnd);
+        // 启动工作线程：后端连接检测 / saves 目录检测
+        // WebView2 初始化移到 ShowWindow 之后，确保父窗口已可见，避免部分机器上控制器创建后白屏
         std::thread(ConnThread).detach();
         std::thread(DetectThread).detach();
         return 0;
@@ -854,6 +928,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
 
     ::ShowWindow(hwnd, nCmdShow);
     ::UpdateWindow(hwnd);
+
+    // 窗口显示后再初始化 WebView2：确保父窗口已可见，规避部分环境下控制器创建后白屏
+    InitWebView2(hwnd);
 
     MSG msg{};
     while (::GetMessageW(&msg, nullptr, 0, 0) > 0) {
