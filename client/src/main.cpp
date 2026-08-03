@@ -14,6 +14,7 @@
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <shellapi.h>
+#include <dwmapi.h>
 
 #include <wrl.h>
 #include <WebView2.h>
@@ -527,9 +528,18 @@ void InitWebView2(HWND hwnd) {
                                 settings->put_AreDevToolsEnabled(FALSE);
                                 settings->put_IsStatusBarEnabled(FALSE);
                                 settings->put_IsZoomControlEnabled(FALSE);
-                                settings->put_IsGeneralAutofillEnabled(FALSE);
-                                settings->put_IsPasswordAutosaveEnabled(FALSE);
-                                settings->put_AreBrowserExtensionsEnabled(FALSE);
+
+                                // 以下三项在派生接口（Settings4/5），需 As() 做 QueryInterface；
+                                // 旧版 SDK 若没有这些接口则跳过，不影响核心功能。
+                                ComPtr<ICoreWebView2Settings4> s4;
+                                if (SUCCEEDED(settings.As(&s4)) && s4) {
+                                    s4->put_IsGeneralAutofillEnabled(FALSE);
+                                    s4->put_IsPasswordAutosaveEnabled(FALSE);
+                                }
+                                ComPtr<ICoreWebView2Settings5> s5;
+                                if (SUCCEEDED(settings.As(&s5)) && s5) {
+                                    s5->put_AreBrowserExtensionsEnabled(FALSE);
+                                }
                             }
                             ctrl->put_ZoomFactor(1.0);
                             ctrl->put_IsVisible(TRUE);
