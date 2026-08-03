@@ -391,6 +391,8 @@
 
   $('pwd').addEventListener('input', e=>{
     let v=e.target.value.replace(/[^A-Za-z0-9]/g,'').slice(0,24); e.target.value=v;
+    // 每次变化都把当前密码回传 native，关闭时据此写入 2.ini（为空即写空）
+    send({type:'password', password:v});
     if(pwdTimer) clearTimeout(pwdTimer);
     // 输入一个合法密码后，停顿 500ms 再向后端核对是否已被占用
     pwdTimer = setTimeout(()=>{ if(validPwd(v)) send({type:'checkPassword', password:v}); }, 500);
