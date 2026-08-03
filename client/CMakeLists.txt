@@ -63,16 +63,17 @@ message(STATUS " WebView2 包含目录 : ${WEBVIEW2_INCLUDE_DIR}")
 message(STATUS " WebView2 链接库   : ${WEBVIEW2_LOADER_LIB}")
 
 # 把 webui/index.html 以资源形式内嵌进 exe（生成 html_rc.rc）
-# 注：CMake 在 client/ 子目录下运行，webui/ 在仓库根，故取上一级
-set(HTML_SRC "${CMAKE_SOURCE_DIR}/../webui/index.html")
-# 规范化掉 ..，否则 rc.exe 会把 "D:/.../client/../webui/index.html" 当成
-# 相对 RC 文件所在 build 目录的路径去解析，导致 RC2135 找不到文件。
+# 唯一真源：client/webui/index.html（2026-08-04 起统一以此为单一来源；
+# 根 webui/index.html 已废弃改名 _DEPRECATED_root_prototype.html，不再作为构建输入）。
+set(HTML_SRC "${CMAKE_SOURCE_DIR}/webui/index.html")
+# 规范化（CMAKE_SOURCE_DIR 即 client/，此处无 ".."；保留 ABSOLUTE 以防不同调用方式下路径歧义）
 get_filename_component(HTML_SRC "${HTML_SRC}" ABSOLUTE)
 if(NOT EXISTS "${HTML_SRC}")
     message(FATAL_ERROR
-        "找不到要内嵌的 webui/index.html（已解析为: ${HTML_SRC}）。\n"
-        "请确认仓库根目录的 webui/index.html 已提交（CI 需 checkout 到该文件）。")
+        "找不到要内嵌的 client/webui/index.html（已解析为: ${HTML_SRC}）。\n"
+        "请确认 client/webui/index.html 已提交（CI 需 checkout 到该文件）。")
 endif()
+message(STATUS " 内嵌的 HTML 源 : ${HTML_SRC}")
 # 用原生反斜杠路径；并把每个反斜杠转义成 \\，避免 RC 编译器把 \a \t 等当成转义序列
 file(TO_NATIVE_PATH "${HTML_SRC}" HTML_NATIVE_PATH)
 string(REPLACE "\\" "\\\\" HTML_RC_PATH "${HTML_NATIVE_PATH}")
