@@ -1,45 +1,89 @@
-# ============================================================================
-# CI：windows-latest 上完成 编译 -> 打包 -> 运行验证 -> 产出工件
-# 私有仓库内运行，环境受控（GitHub 托管 runner）。
-# ============================================================================
-name: build-and-verify
+name: Build Windows Client
+
+# 客户端是纯 Win32 + C++17、零第三方依赖、/MT 静态链接，
+# 目标机器不需要安装任何 VC++ 运行库。本工作流只负责在 GitHub 上编译出 exe。
+# 仅手动触发（workflow_dispatch），不随 push / PR 自动跑。
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 仅允许在 Actions 页面手动触发
+
+permissions:
+  contents: read
+  id-token: write      # actions/upload-artifact@v4 新版后端需要
+  actions: read
 
 jobs:
   build:
+    name: Build (Windows x64 / Release / /MT)
     runs-on: windows-latest
-
+    defaults:
+      run:
+        shell: pwsh
     steps:
-      - name: 检出代码
+      - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 安装 MSVC 工具链
+      # 把 MSVC 工具链（cl / link / rc / lib / include）挂到 PATH。
+      # 注意：不用 VS IDE 生成器，避免 CMake 在某些 runner 上“找不到 Visual Studio 实例”。
+      - name: 配置 MSVC 工具链 (x64)
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: 一键构建（打包器 -> 加密负载 -> 嵌入壳）
-        shell: pwsh
+      # 确保 Ninja 可用（GitHub 的 windows runner 已自带，这里做个兜底）
+      - name: 确保 Ninja 可用
         run: |
-          .\build.ps1
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja -y
+          }
+          ninja --version
 
-      - name: 运行加壳后的程序（验证解密 + 手动加载 + OEP）
-        shell: pwsh
+      # 获取 WebView2 SDK（仅编译期需要；运行时依赖系统 WebView2 Runtime）
+      - name: 获取 WebView2 SDK
         run: |
-          $out = ".\packed_app.exe"
-          if (-not (Test-Path $out)) { throw "未找到 $out" }
-          $p = Start-Process -FilePath $out -PassThru -Wait
-          Write-Host "exit_code = $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw "加壳程序退出码非 0 ($($p.ExitCode))" }
-          # 样例程序成功执行会写验证文件
-          if (-not (Test-Path ".\pearmor_payload_ran.txt")) { throw "样例未生成验证文件：OEP 未执行" }
-          Get-Content ".\pearmor_payload_ran.txt"
+          $ver = "1.0.2739.15"
+          $url = "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$ver"
+          Invoke-WebRequest -Uri $url -OutFile webview2.nupkg
+          Expand-Archive -Path webview2.nupkg -DestinationPath webview2sdk -Force
 
-      - name: 上传工件（加壳后的 EXE + 打包器）
+          # 递归定位真实头文件/库位置，绕开 NuGet 包内部目录结构差异
+          $hdr = Get-ChildItem -Path webview2sdk -Recurse -Filter WebView2.h | Select-Object -First 1
+          if (-not $hdr) { throw "解压后找不到 WebView2.h，请检查 Microsoft.Web.WebView2 包版本 $ver" }
+          $incDir = $hdr.DirectoryName
+
+          $lib = Get-ChildItem -Path webview2sdk -Recurse -Filter WebView2LoaderStatic.lib |
+                 Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Select-Object -First 1
+          if (-not $lib) { throw "解压后找不到 x64 的 WebView2LoaderStatic.lib" }
+          $libDir = $lib.DirectoryName
+
+          $sdk = "$PWD/webview2sdk"
+          # 用 ASCII 写 GITHUB_ENV，避免 UTF-8 BOM 把首个变量名吞掉导致传递失败
+          "WEBVIEW2_SDK_ROOT=$sdk"       | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding ascii
+          "WEBVIEW2_INCLUDE_DIR=$incDir" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding ascii
+          "WEBVIEW2_LIB_DIR=$libDir"     | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding ascii
+          Write-Host "WebView2 SDK 根目录: $sdk"
+          Write-Host "WebView2 包含目录 : $incDir"
+          Write-Host "WebView2 链接目录 : $libDir"
+
+      - name: CMake 配置（Ninja 生成器）
+        working-directory: client
+        run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DWEBVIEW2_SDK_ROOT="${{ env.WEBVIEW2_SDK_ROOT }}"
+
+      - name: 编译 Release
+        working-directory: client
+        run: cmake --build build --config Release
+
+      - name: 定位生成的 exe
+        working-directory: client
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter HanbotSavesUploader.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有找到 HanbotSavesUploader.exe，编译可能失败" }
+          echo "EXE_PATH=$($exe.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          Write-Host "已生成可执行文件: $($exe.FullName)"
+
+      - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: pearmor-p0
-          path: |
-            packed_app.exe
-            build/packer/Release/pearmor-packer.exe
+          name: HanbotSavesUploader-windows-x64
+          path: ${{ env.EXE_PATH }}
           if-no-files-found: error
