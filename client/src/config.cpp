@@ -41,4 +41,27 @@ void WriteTemplateIfMissing() {
     util::WriteWholeFile(ini, content.data(), content.size() * sizeof(wchar_t));
 }
 
+// ---------------------------------------------------------------------------
+// 本地记住的状态：存于独立的 2.ini（与敏感的 uploader.ini 分离）
+// ---------------------------------------------------------------------------
+static std::wstring StateIniPath() {
+    return util::JoinPath(util::GetExeDir(), L"2.ini");
+}
+
+void LoadState(AppState& s) {
+    const std::wstring ini = StateIniPath();
+    if (!util::FileExists(ini)) return;
+    wchar_t buf[2048] = {0};
+    DWORD n = ::GetPrivateProfileStringW(L"State", L"SavesDir", L"", buf, 2048, ini.c_str());
+    if (n > 0) s.savesDir = std::wstring(buf, n);
+    n = ::GetPrivateProfileStringW(L"State", L"Password", L"", buf, 2048, ini.c_str());
+    if (n > 0) s.password = std::wstring(buf, n);
+}
+
+void SaveState(const std::wstring& savesDir, const std::wstring& password) {
+    const std::wstring ini = StateIniPath();
+    ::WritePrivateProfileStringW(L"State", L"SavesDir", savesDir.c_str(), ini.c_str());
+    ::WritePrivateProfileStringW(L"State", L"Password", password.c_str(), ini.c_str());
+}
+
 } // namespace config

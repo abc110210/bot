@@ -46,4 +46,18 @@ void Load();
 // 首次运行时写一份占位配置（不含地址/密钥/超时等敏感信息）
 void WriteTemplateIfMissing();
 
+// ---- 本地记住的状态（存于独立的 2.ini，方便重开软件后直接下载）----
+// 注意：这里刻意与敏感的 uploader.ini 分开；密码以明文存于 2.ini，
+// 仅用于本机便利（重开软件自动填入），非跨设备传输。
+struct AppState {
+    std::wstring savesDir;   // 上次成功操作的 saves 目录
+    std::wstring password;   // 上次成功上传/下载用的密码
+};
+
+// 读取 exe 同目录的 2.ini（[State] 段）。文件不存在时返回空。
+void LoadState(AppState& s);
+
+// 写入 2.ini（覆盖 [State] 段的 SavesDir / Password）。
+void SaveState(const std::wstring& savesDir, const std::wstring& password);
+
 } // namespace config

@@ -109,10 +109,22 @@ void PostJson(const std::wstring& json) {
         g_pending.push_back(json);
 }
 
-std::wstring BuildInit() {
+std::wstring BuildInit(const std::wstring& password = L"") {
     // 刻意不下发后端地址：页面日志对用户可见，地址一旦落到界面上就等于公开了服务端。
-    return std::wstring(L"{\"type\":\"init\",\"app\":") + JStr(APP_TITLE_W) +
-           L",\"version\":\"1.0.0\"}";
+    std::wstring s = std::wstring(L"{\"type\":\"init\",\"app\":") + JStr(APP_TITLE_W) +
+                     L",\"version\":\"1.0.0\"";
+    if (!password.empty()) s += L",\"password\":" + JStr(password);
+    s += L"}";
+    return s;
+}
+
+// 当前本地时间字符串（YYYY-MM-DD HH:MM），用于上传结果里的「完成时间」
+std::wstring NowString() {
+    SYSTEMTIME st; ::GetLocalTime(&st);
+    wchar_t buf[64]{};
+    ::swprintf(buf, 64, L"%04d-%02d-%02d %02d:%02d",
+               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute);
+    return buf;
 }
 std::wstring BuildLog(const std::wstring& t) {
     return L"{\"type\":\"log\",\"text\":" + JStr(t) + L"}";
@@ -405,9 +417,18 @@ void HandlePageMessage(const std::wstring& msg) {
         for (auto& p : g_pending)
             if (g_webview) g_webview->PostWebMessageAsString(p.c_str());
         g_pending.clear();
-        PostJson(BuildInit());
+        // 载入记住的目录与密码，随 init 一并回传，方便重开软件直接下载
+        config::AppState st; config::LoadState(st);
+        PostJson(BuildInit(st.password));
         // 把软件图标（base64）推给页面，供头部图标使用
         if (!g_appIconB64.empty()) PostJson(BuildIcon(g_appIconB64));
+        // 回填上次记住的 saves 目录（若仍有效）
+        if (!st.savesDir.empty()) {
+            bool has = lolfind::HasMarker(st.savesDir);
+            PostJson(BuildDir(st.savesDir, has ? 1 : 2,
+                has ? (L"√ 已记住上次目录：" + st.savesDir)
+                    : (L"× 记住的目录已失效，请重新选择")));
+        }
     }
     else if (type == "health") {
         std::thread(ConnThread).detach();
@@ -522,19 +543,25 @@ void HandleOutcome(uploader::Outcome* r) {
         stage = L"下载解压完成";
         copyEnabled = true;
     } else {
-        resultText  = L"压缩密码： " + r->password + L"\r\n";
-        resultText += L"对象 Key： " + r->objectKey + L"\r\n";
-        if (!r->downloadUrl.empty()) resultText += L"下载链接： " + r->downloadUrl + L"\r\n";
-        if (!r->expireText.empty())  resultText += L"有效期：   " + r->expireText + L"\r\n";
-        resultText += L"压缩包大小：" + util::FormatSize(r->zipBytes) +
+        // 上传结果只展示必要信息：密码 + 压缩包大小（含原始/文件数），
+        // 以及备份目录、完成时间。对象 Key / 下载链接 / 有效期 不展示——
+        // 下载链接在用户凭密码下载时才由服务端按需生成，无需提前给出。
+        resultText  = L"密码：       " + r->password + L"\r\n";
+        resultText += L"压缩包大小： " + util::FormatSize(r->zipBytes) +
                       L"（原始 " + util::FormatSize(r->rawBytes) + L"，共 " +
-                      std::to_wstring((unsigned long long)r->fileCount) + L" 个文件）";
-        resultLabel = L"上传结果（请务必保存密码）";
+                      std::to_wstring((unsigned long long)r->fileCount) + L" 个文件）\r\n";
+        resultText += L"备份目录：   " + g_lastDir + L"\r\n";
+        resultText += L"完成时间：   " + NowString();
+        resultLabel = L"上传结果（请保存密码）";
         stage = L"上传完成";
         copyEnabled = true;
     }
 
-    if (ok && !canceled) { g_lastResultText = resultText; g_uploadDone.store(true); }
+    if (ok && !canceled) {
+        g_lastResultText = resultText; g_uploadDone.store(true);
+        // 记住 saves 目录与密码到 2.ini，方便下次重开软件直接凭密码下载
+        config::SaveState(g_lastDir, r->password);
+    }
 
     if (ok && !canceled && !isDownload) {
         util::CopyTextToClipboard(g_hMain, resultText);
