@@ -67,6 +67,7 @@ std::atomic<bool> g_uploadDone{ false };
 
 std::wstring g_lastResultText;            // 关闭前密码警告用
 std::wstring g_lastDir;                   // 最近一次操作的目录（结果文案用）
+std::wstring g_currentPwd;                 // 页面当前密码框内容（关闭时写入 2.ini）
 std::wstring g_appIconB64;                // 启动期从资源读取的软件图标（base64，供页面头部注入）
 
 inline int S(int v) { return ::MulDiv(v, g_dpi, 96); }
@@ -452,6 +453,7 @@ void HandlePageMessage(const std::wstring& msg) {
         std::wstring dir = util::Utf8ToWide(j->GetStr("dir"));
         std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
         g_lastDir = dir;
+        g_currentPwd = pwd;
         if (dir.empty() || !lolfind::HasMarker(dir)) {
             PostJson(BuildDone(false, false, false, false,
                 L"当前目录无效，必须是包含 " MARKER_FILE_W L" 的 saves 目录",
@@ -470,6 +472,7 @@ void HandlePageMessage(const std::wstring& msg) {
         std::wstring dir = util::Utf8ToWide(j->GetStr("dir"));
         std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
         g_lastDir = dir;
+        g_currentPwd = pwd;
         if (dir.empty() || !util::DirectoryExists(dir)) {
             PostJson(BuildDone(false, false, true, false,
                 L"请先选择要解压到的 saves 目录", L"", L"缺少目录", L"缺少目录", false));
@@ -511,6 +514,10 @@ void HandlePageMessage(const std::wstring& msg) {
         // 页面随机生成 / 手动输入密码后，先问后端是否已被占用
         std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
         if (!pwd.empty()) std::thread(CheckPwdThread, pwd).detach();
+    }
+    else if (type == "password") {
+        // 页面密码框每次变化都回传，关闭时据此写入 2.ini（为空即写空）
+        g_currentPwd = util::Utf8ToWide(j->GetStr("password"));
     }
 }
 
@@ -559,8 +566,6 @@ void HandleOutcome(uploader::Outcome* r) {
 
     if (ok && !canceled) {
         g_lastResultText = resultText; g_uploadDone.store(true);
-        // 记住 saves 目录与密码到 2.ini，方便下次重开软件直接凭密码下载
-        config::SaveState(g_lastDir, r->password);
     }
 
     if (ok && !canceled && !isDownload) {
@@ -817,11 +822,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             g_cancel.store(true);
             ::Sleep(200);
         }
+        // 关闭时把当前目录与密码写入 2.ini（密码为空则写空），方便重开直接下载
+        config::SaveState(g_lastDir, g_currentPwd);
         if (g_uploadDone.load() && !g_lastResultText.empty()) {
             const int r = ::MessageBoxW(hwnd,
-                L"密码关闭后将无法找回，确认已经保存好了吗？\r\n\r\n"
-                L"（结果已自动复制到剪贴板）",
-                L"确认退出", MB_YESNO | MB_ICONWARNING);
+                L"当前目录与密码已自动保存到本机，确认退出？",
+                L"确认退出", MB_YESNO | MB_ICONINFORMATION);
             if (r != IDYES) return 0;
         }
         ::DestroyWindow(hwnd);
