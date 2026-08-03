@@ -65,6 +65,14 @@ message(STATUS " WebView2 链接库   : ${WEBVIEW2_LOADER_LIB}")
 # 把 webui/index.html 以资源形式内嵌进 exe（生成 html_rc.rc）
 # 注：CMake 在 client/ 子目录下运行，webui/ 在仓库根，故取上一级
 set(HTML_SRC "${CMAKE_SOURCE_DIR}/../webui/index.html")
+# 规范化掉 ..，否则 rc.exe 会把 "D:/.../client/../webui/index.html" 当成
+# 相对 RC 文件所在 build 目录的路径去解析，导致 RC2135 找不到文件。
+get_filename_component(HTML_SRC "${HTML_SRC}" ABSOLUTE)
+if(NOT EXISTS "${HTML_SRC}")
+    message(FATAL_ERROR
+        "找不到要内嵌的 webui/index.html（已解析为: ${HTML_SRC}）。\n"
+        "请确认仓库根目录的 webui/index.html 已提交（CI 需 checkout 到该文件）。")
+endif()
 # 用原生反斜杠路径；并把每个反斜杠转义成 \\，避免 RC 编译器把 \a \t 等当成转义序列
 file(TO_NATIVE_PATH "${HTML_SRC}" HTML_NATIVE_PATH)
 string(REPLACE "\\" "\\\\" HTML_RC_PATH "${HTML_NATIVE_PATH}")
