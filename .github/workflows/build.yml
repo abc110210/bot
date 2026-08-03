@@ -41,7 +41,10 @@ jobs:
       # 获取 WebView2 SDK（仅编译期需要；运行时依赖系统 WebView2 Runtime）
       - name: 获取 WebView2 SDK
         run: |
-          $ver = "1.0.2739.15"
+          # 查询 NuGet 最新稳定版（避免写死版本与本地不一致，并确保含最新 API）
+          $idx = Invoke-RestMethod "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/index.json"
+          $ver = ($idx.versions | Where-Object { $_ -notmatch '-' } | Sort-Object { [version] $_ } | Select-Object -Last 1)
+          Write-Host "WebView2 SDK 版本: $ver"
           $url = "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$ver"
           Invoke-WebRequest -Uri $url -OutFile webview2.nupkg
           Expand-Archive -Path webview2.nupkg -DestinationPath webview2sdk -Force
@@ -50,6 +53,14 @@ jobs:
           $hdr = Get-ChildItem -Path webview2sdk -Recurse -Filter WebView2.h | Select-Object -First 1
           if (-not $hdr) { throw "解压后找不到 WebView2.h，请检查 Microsoft.Web.WebView2 包版本 $ver" }
           $incDir = $hdr.DirectoryName
+
+          # 头文件完整性校验：确认关键 API 已存在，避免旧/损坏 SDK 导致编译失败
+          $htext = Get-Content $hdr.FullName -Raw
+          foreach ($sym in @('get_WebMessageAsString','IsGeneralAutofillEnabled','ICoreWebView2Settings5')) {
+              if ($htext -notmatch [regex]::Escape($sym)) {
+                  throw "WebView2.h 缺少必要 API: $sym（SDK 版本 $ver 不完整，请检查）"
+              }
+          }
 
           $lib = Get-ChildItem -Path webview2sdk -Recurse -Filter WebView2LoaderStatic.lib |
                  Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Select-Object -First 1
