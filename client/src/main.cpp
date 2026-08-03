@@ -550,7 +550,16 @@ void InitWebView2(HWND hwnd) {
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                     [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                                         LPWSTR raw = nullptr;
-                                        args->get_WebMessageAsString(&raw);
+                                        // 新版 WebView2 SDK 把读取方法从 get_WebMessageAsString 改名为
+                                        // TryGetWebMessageAsString（多返回一个 isJson 标志）。用 __if_exists 在
+                                        // 编译期适配两套 SDK，确保新旧版本都能编过。
+                                        __if_exists(ICoreWebView2WebMessageReceivedEventArgs::TryGetWebMessageAsString) {
+                                            BOOL isJson = FALSE;
+                                            args->TryGetWebMessageAsString(&raw, &isJson);
+                                        }
+                                        __if_not_exists(ICoreWebView2WebMessageReceivedEventArgs::TryGetWebMessageAsString) {
+                                            args->get_WebMessageAsString(&raw);
+                                        }
                                         std::wstring msg(raw ? raw : L"");
                                         if (raw) ::CoTaskMemFree(raw);
                                         HandlePageMessage(msg);
