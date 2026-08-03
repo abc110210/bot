@@ -536,10 +536,8 @@ void InitWebView2(HWND hwnd) {
                                     s4->put_IsGeneralAutofillEnabled(FALSE);
                                     s4->put_IsPasswordAutosaveEnabled(FALSE);
                                 }
-                                ComPtr<ICoreWebView2Settings5> s5;
-                                if (SUCCEEDED(settings.As(&s5)) && s5) {
-                                    s5->put_AreBrowserExtensionsEnabled(FALSE);
-                                }
+                                // 注：AreBrowserExtensionsEnabled 在最新 SDK 中已挪到 ICoreWebView2EnvironmentOptions6
+                                // （环境级选项，需在创建环境时传入 options，而非运行时 setting），且对应用无意义，故不调用。
                             }
                             ctrl->put_ZoomFactor(1.0);
                             ctrl->put_IsVisible(TRUE);
@@ -550,12 +548,10 @@ void InitWebView2(HWND hwnd) {
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                     [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                                         LPWSTR raw = nullptr;
-                                        // 新版 WebView2 SDK 把读取方法从 get_WebMessageAsString 改名为
-                                        // TryGetWebMessageAsString（多返回一个 isJson 标志）。用 __if_exists 在
-                                        // 编译期适配两套 SDK，确保新旧版本都能编过。
+                                        // 新版 WebView2 SDK 用 TryGetWebMessageAsString 取代老版 get_WebMessageAsString
+                                        // （两者均为单参数 LPWSTR*）。用 __if_exists 编译期适配两套 SDK。
                                         __if_exists(ICoreWebView2WebMessageReceivedEventArgs::TryGetWebMessageAsString) {
-                                            BOOL isJson = FALSE;
-                                            args->TryGetWebMessageAsString(&raw, &isJson);
+                                            args->TryGetWebMessageAsString(&raw);
                                         }
                                         __if_not_exists(ICoreWebView2WebMessageReceivedEventArgs::TryGetWebMessageAsString) {
                                             args->get_WebMessageAsString(&raw);
