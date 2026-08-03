@@ -5,8 +5,6 @@
 name: build-and-verify
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
