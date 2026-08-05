@@ -558,28 +558,22 @@ void HandleOutcome(uploader::Outcome* r) {
             resultText = r->error;
         }
     } else if (isDownload) {
-        resultText  = OBFW("5bey6Kej5Y6L5Yiw77yaIA==") + g_lastDir + OBFW("DQo=");
-        resultText += OBFW("5oGi5aSN5paH5Lu277yaIA==") + std::to_wstring((unsigned long long)r->extractedFiles) + OBFW("IOS4qg0K");
-        resultText += OBFW("5LiL6L295aSn5bCP77yaIA==") + util::FormatSize(r->downloadedBytes) + OBFW("DQo=");
-        resultText += OBFW("6Kej5Y6L5aSn5bCP77yaIA==") + util::FormatSize(r->rawBytes);
-        resultLabel = OBFW("5LiL6L2957uT5p6c");
-        stage = OBFW("5LiL6L296Kej5Y6L5a6M5oiQ");
-        copyEnabled = true;
+        // 下载并解压：结果框不展示明细（用户要求只给一句完成提示），复制按钮置灰
+        resultText  = OBFW("5LiL6L295bm26Kej5Y6L5a6M5oiQ");   // 下载并解压完成
+        resultLabel = OBFW("5LiL6L2957uT5p6c");               // 下载结果
+        stage = OBFW("5LiL6L296Kej5Y6L5a6M5oiQ");             // 下载解压完成
+        copyEnabled = false;
     } else {
-        // 上传结果只展示必要信息：密码 + 压缩包大小（含原始/文件数），
-        // 以及备份目录、完成时间。对象 Key / 下载链接 / 有效期 不展示——
-        // 下载链接在用户凭密码下载时才由服务端按需生成，无需提前给出。
-        resultText  = OBFW("5a+G56CB77yaICAgICAgIA==") + r->password + OBFW("DQo=");
+        // 上传成功：只展示「请记好以下信息」+ 上传密码 + 取回密码（最简，便于手抄保存）
+        resultText  = OBFW("PT09PT09PT3or7forrDlpb3ku6XkuIvkv6Hmga89PT09PT09PQ==");  // ========请记好以下信息========
+        resultText += OBFW("DQo=");
+        resultText += OBFW("5LiK5Lyg5a+G56CBOiA=") + r->password;                     // 上传密码: 
+        resultText += OBFW("DQo=");
         // 后端随上传返回的「取回密码」（SK- 开头）也要展示出来，方便用户复制分享给朋友取回
         if (!r->downloadPassword.empty())
-            resultText += OBFW("5Y+W5Zue5a+G56CB77ya") + r->downloadPassword + OBFW("DQo=");
-        resultText += OBFW("5Y6L57yp5YyF5aSn5bCP77yaIA==") + util::FormatSize(r->zipBytes) +
-                      OBFW("77yI5Y6f5aeLIA==") + util::FormatSize(r->rawBytes) + OBFW("77yM5YWxIA==") +
-                      std::to_wstring((unsigned long long)r->fileCount) + OBFW("IOS4quaWh+S7tu+8iQ0K");
-        resultText += OBFW("5aSH5Lu955uu5b2V77yaICAg") + g_lastDir + OBFW("DQo=");
-        resultText += OBFW("5a6M5oiQ5pe26Ze077yaICAg") + NowString();
-        resultLabel = OBFW("5LiK5Lyg57uT5p6c77yI6K+35L+d5a2Y5a+G56CB77yJ");
-        stage = OBFW("5LiK5Lyg5a6M5oiQ");
+            resultText += OBFW("5Y+W5Zue5a+G56CBOiA=") + r->downloadPassword;         // 取回密码: 
+        resultLabel = OBFW("5LiK5Lyg57uT5p6c77yI6K+35L+d5a2Y5a+G56CB77yJ");          // 上传结果（请保存密码）
+        stage = OBFW("5LiK5Lyg5a6M5oiQ");                                           // 上传完成
         copyEnabled = true;
     }
 
