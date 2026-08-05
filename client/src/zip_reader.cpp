@@ -76,17 +76,19 @@ bool ReadExact(HANDLE h, void* buf, size_t n) {
 // 前缀部分（\\?\ 或 \\?\UNC\）不当作分隔符拆分，从其后开始逐级 CreateDirectoryW。
 bool EnsureDirExists(const std::wstring& dir) {
     // 长路径前缀处理：确定「根前缀」长度，使后续节点拼出完整有效路径。
-    //   \\?\X:   -> 6（含盘符，如 \\?\D:；后续从 D: 之后开始，full 形如 \\?\D:\X）
+    //   \\?\X:\  -> 7（含盘符及末尾反斜杠，如 \\?\D:\；后续 full = \\?\D:\ + acc 才合法）
     //   \\?\UNC\ -> 8（UNC；本地解压不用，按整体前缀处理）
     //   普通绝对路径 -> 0（如 D:\...，卷根 D: 由下方 isDriveRoot 跳过）
-    // 2026-08-06 修复回归：上一版把前缀固定为 4（\\?\），再用 isDriveRoot 跳过 acc 里的
-    // "D:" 节点，导致后续节点拼成 "\\?\LOL"（丢了盘符 D:）→ CreateDirectoryW 失败 →
-    // CreateParentDirs 误返回 false → 解压报「创建目录失败」。必须把 \\?\X: 整体（6 字符）
-    // 当作前缀，后续 full = "\\?\D:\" + acc 才正确。
+    // 2026-08-06 修复回归（两次）：
+    //   ① 第一版把前缀算成 4（\\?\），再用 isDriveRoot 跳过 acc 里的 "D:" → 拼成 "\\?\LOL"（丢盘符）
+    //   ② 第二版算成 6（\\?\D:），漏了 D: 后的反斜杠 → 拼成 "\\?\D:LOL"（无效路径）
+    //   两者都使 CreateDirectoryW 失败 → CreateParentDirs 误返回 false → 解压报「创建目录失败」
+    //   （用户在 saves 已存在时仍失败，正是首个中间节点 \\?\D:LOL 无效所致）。
+    //   正确做法：把 "\\?\D:\" 整体（7 字符，含盘符与末尾反斜杠）当前缀。
     size_t prefixLen = 0;
     if (dir.size() >= 4 && dir[0] == L'\\' && dir[1] == L'\\' &&
         dir[2] == L'?' && dir[3] == L'\\') {
-        if (dir.size() >= 6 && dir[5] == L':') prefixLen = 6;   // \\?\X:
+        if (dir.size() >= 7 && dir[5] == L':' && dir[6] == L'\\') prefixLen = 7;   // \\?\X:\
         else prefixLen = 4;
     } else if (dir.size() >= 8 && dir.compare(0, 8, L"\\\\?\\UNC\\") == 0) {
         prefixLen = 8;
@@ -290,7 +292,7 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
 
         if (isDir || isRoot) {
             if (outPath.empty()) outPath = targetDir;
-            EnsureDirExists(outPath);
+            EnsureDirExists(util::LongPath(outPath));
             res.dirCount++;
             continue;
         }
