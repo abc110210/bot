@@ -154,18 +154,52 @@ std::wstring BuildDir(const std::wstring& path, int vs, const std::wstring& vt) 
     return L"{\"type\":\"dir\",\"path\":" + JStr(path) +
            OBFW("LCJ2ZXJpZnlTdGF0ZSI6") + std::to_wstring(vs) + OBFW("LCJ2ZXJpZnlUZXh0Ijo=") + JStr(vt) + OBFW("fQ==");
 }
+// 自包含的 JSON string escape：BuildDone 专用，不依赖 json_mini.cpp 的
+// EscapeString（05:14 反馈：obfuscate 重跑后 EscapeString 输出异常，导致含换行
+// 字段的 done JSON 解析失败 → m.resultText 变 undefined → 结果框 placeholder）。
+// 这里直接写死：只 escape JSON 字符串必须的 5 个字符（" \ r n t），其余原样，
+// 简单可靠，与 obfuscate 状态无关。
+static std::wstring JSDone(const std::wstring& s) {
+    std::wstring out; out.reserve(s.size() + 16);
+    for (wchar_t c : s) {
+        switch (c) {
+            case L'"':  out += L"\\\""; break;
+            case L'\\': out += L"\\\\"; break;
+            case L'\r': out += L"\\r";  break;
+            case L'\n': out += L"\\n";  break;
+            case L'\t': out += L"\\t";  break;
+            default:   out += c;        break;
+        }
+    }
+    return OBFW("Ig==") + out + OBFW("Ig==");
+}
+
 std::wstring BuildDone(bool ok, bool canceled, bool isDownload, bool pwdWrong,
                        const std::wstring& error, const std::wstring& resultText,
                        const std::wstring& resultLabel, const std::wstring& stage, bool copyEnabled) {
-    return L"{\"type\":\"done\",\"ok\":" + WBool(ok) +
+    // 全部字段用自包含的 JSDone escape（不依赖 json::EscapeString）。
+    // 原因：json::EscapeString 在 json_mini.cpp 中经 obfuscate 反复重跑后，
+    // 对部分控制字符的输出可能异常（实测导致 done JSON 含真换行解析失败）。
+    // 这里用最简 escape 保证 done 消息一定合法。
+    std::wstring out = L"{\"type\":\"done\",\"ok\":" + WBool(ok) +
            OBFW("LCJjYW5jZWxlZCI6") + WBool(canceled) +
            OBFW("LCJpc0Rvd25sb2FkIjo=") + WBool(isDownload) +
            OBFW("LCJwYXNzd29yZFdyb25nIjo=") + WBool(pwdWrong) +
-           OBFW("LCJlcnJvciI6") + JStr(error) +
-           OBFW("LCJyZXN1bHRUZXh0Ijo=") + JStr(resultText) +
-           OBFW("LCJyZXN1bHRMYWJlbCI6") + JStr(resultLabel) +
-           OBFW("LCJzdGFnZSI6") + JStr(stage) +
+           OBFW("LCJlcnJvciI6") + JSDone(error) +
+           OBFW("LCJyZXN1bHRUZXh0Ijo=") + JSDone(resultText) +
+           OBFW("LCJyZXN1bHRMYWJlbCI6") + JSDone(resultLabel) +
+           OBFW("LCJzdGFnZSI6") + JSDone(stage) +
            OBFW("LCJjb3B5RW5hYmxlZCI6") + WBool(copyEnabled) + OBFW("fQ==");
+    // 临时诊断（05:14 反馈结果框空）：打印 done JSON 头部 + resultText 头尾。
+    try {
+        std::wstring head = out.size() > 250 ? out.substr(0, 250) : out;
+        std::wstring rth = resultText.size() > 30 ? resultText.substr(0, 30) + L"..." : resultText;
+        std::wstring rtt = resultText.size() > 30 ? resultText.substr(resultText.size() - 20) : L"";
+        PostLog(L"[诊断-done] resultText.size=" + std::to_wstring(resultText.size()) +
+                L" 头=" + rth + L" 尾=" + rtt);
+        PostLog(L"[诊断-done] JSON 头=" + head);
+    } catch (...) {}
+    return out;
 }
 
 std::wstring BuildIcon(const std::wstring& b64) {
