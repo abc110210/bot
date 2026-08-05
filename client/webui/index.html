@@ -229,17 +229,27 @@
         </div>
         <div class="verify" id="verify">尚未选择目录</div>
 
-        <div class="label">密码设置（4–24 位字母 / 数字）</div>
+        <div class="label">上传密码（4–24 位字母 / 数字）</div>
         <div class="row">
-          <input class="pwd" id="pwd" type="text" autocomplete="off" placeholder="取回与上传都需用同一密码" maxlength="24">
+          <input class="pwd" id="pwd" type="text" autocomplete="off" placeholder="用于加密并上传存档" maxlength="24">
           <button class="btn pwd-eye" id="togglePwd" type="button" title="显示密码" aria-label="显示密码">
             <svg viewBox="0 0 16 16" class="eye-open"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/></svg>
             <svg viewBox="0 0 16 16" class="eye-closed"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>
           </button>
           <button class="btn" id="copyPwd">复制</button>
-          <button class="btn" id="genPwd">随机生成密码</button>
+          <button class="btn" id="genPwd">随机生成</button>
         </div>
-        <div class="hint" id="hint">请输入 4~24 位字母或数字，作为取回和上传的凭据（上传 / 下载都需用同一密码）</div>
+        <div class="hint" id="hint">请输入 4~24 位字母或数字（不能含 SK- 前缀，那是取回密码专用）；同一上传密码再次上传会覆盖原存档</div>
+
+        <div class="label">取回密码（SK- 开头，共 23 位）</div>
+        <div class="row">
+          <input class="pwd" id="dlpwd" type="text" autocomplete="off" placeholder="粘贴好友分享的取回密码" maxlength="23">
+          <button class="btn pwd-eye" id="toggleDlPwd" type="button" title="显示密码" aria-label="显示密码">
+            <svg viewBox="0 0 16 16" class="eye-open"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/></svg>
+            <svg viewBox="0 0 16 16" class="eye-closed"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>
+          </button>
+        </div>
+        <div class="hint" id="dlhint">上传成功后，取回密码会显示在下方「操作结果」框；把它发给好友，对方即可取回你的存档</div>
 
         <div class="actions">
           <button class="primary up" id="upload" disabled>📤 打包并上传</button>
@@ -264,7 +274,7 @@
           <div class="res-actions"><button class="btn copy" id="copy" disabled>复制结果</button></div>
         </div>
 
-        <div class="footer">密码已自动保存在本机，重开软件会自动填入；下载恢复时也使用同一密码</div>
+        <div class="footer">上传密码与取回密码均自动保存在本机，重开软件会自动填入；取回密码可发给好友用于取回存档</div>
 
         <div class="debug">
           <button id="simConn">模拟：连接成功 / 失败</button>
@@ -286,30 +296,41 @@
 
   let state = { dir:'', dirValid:false, connOk:false, busy:false };
   const validPwd = v => /^[A-Za-z0-9]{4,24}$/.test(v);
+  const validDlPwd = v => /^SK-[A-Za-z0-9]{20}$/.test(v);   // 取回密码：SK- + 20 位字母数字，共 23 位
 
   // 随机密码字符表（不含易混淆字符）
   const PWD_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const DEFAULT_HINT = '请输入 4~24 位字母或数字，作为取回和上传的凭据；同一密码再次上传会覆盖原存档';
+  const DEFAULT_HINT = '请输入 4~24 位字母或数字（不能含 SK- 前缀，那是取回密码专用）；同一上传密码再次上传会覆盖原存档';
 
   // 随机生成密码的查重回调（只用于「随机生成密码」按钮；手动输入不查重）
   let pwdCheckCb = null, pwdCheckTarget = '';
   let genTries = 0;
 
   function refresh(){
-    const ok = validPwd($('pwd').value);
-    const can = state.dirValid && state.connOk && ok && !state.busy;
-    $('upload').disabled   = !can;
-    $('download').disabled = !can;
+    const upOk = validPwd($('pwd').value);
+    const dlOk = validDlPwd($('dlpwd').value);
+    // 上传按钮：依赖「上传密码」有效；下载按钮：依赖「取回密码」有效。二者互不影响。
+    const can = state.dirValid && state.connOk && !state.busy;
+    $('upload').disabled   = !(can && upOk);
+    $('download').disabled = !(can && dlOk);
     $('detect').disabled   = state.busy;
     $('browse').disabled   = state.busy;
   }
   function setVerify(s,t){ const v=$('verify'); v.className='verify'+(s?(' '+s):''); v.textContent=t; refresh(); }
   function setHint(s,t){ const h=$('hint'); h.className='hint'+(s?(' '+s):''); h.textContent=t; }
+  function setDlHint(s,t){ const h=$('dlhint'); h.className='hint'+(s?(' '+s):''); h.textContent=t; }
   function updatePwdHint(){
     const v = $('pwd').value;
     if(v === '') setHint(0, DEFAULT_HINT);
     else if(validPwd(v)) setHint(1, '✓ 密码格式有效（重复使用同一密码将覆盖原存档）');
-    else setHint(2, '✗ 需 4~24 位字母或数字（仅限 A-Z a-z 0-9）');
+    else setHint(2, '✗ 需 4~24 位字母或数字（不能含 SK- 前缀）');
+  }
+  function updateDlHint(){
+    const v = $('dlpwd').value;
+    if(v === '') setDlHint(0, '上传成功后，取回密码会显示在下方「操作结果」框；把它发给好友，对方即可取回你的存档');
+    else if(v.startsWith('SK') && !validDlPwd(v)) setDlHint(2, '请输入完整的下载密码');
+    else if(validDlPwd(v)) setDlHint(1, '✓ 取回密码格式有效');
+    else setDlHint(2, '取回密码须以 SK- 开头（共 23 位）');
   }
   function setConn(s,t){ const c=$('conn'); c.className='conn '+s; $('connText').textContent=t; state.connOk=(s==='ok'); refresh(); }
   function setDir(path,vs,vt){ state.dir=path; state.dirValid=(vs===1); $('path').value=path; setVerify(vs===1?'ok':(vs===2?'err':''), vt); }
@@ -319,8 +340,9 @@
     switch(m.type){
       // 注意：init 里不再携带、也绝不打印任何服务端地址（日志区对用户可见）
       case 'init':
-        // 启动时若本机已记住密码，回填密码框并触发校验（不打印、不泄露）
-        if (m.password) { $('pwd').value = m.password; dispatchInput(); }
+        // 启动时若本机已记住密码，回填两个密码框并触发校验（不打印、不泄露）
+        if (m.password) { $('pwd').value = m.password; $('pwd').dispatchEvent(new Event('input')); }
+        if (m.downloadPassword) { $('dlpwd').value = m.downloadPassword; $('dlpwd').dispatchEvent(new Event('input')); }
         break;
       case 'log':   log(m.text); break;
       case 'progress':
@@ -373,21 +395,24 @@
   $('detect').onclick   = ()=> send({type:'detect'});
   $('browse').onclick   = ()=> send({type:'pick'});
   $('upload').onclick   = ()=> send({type:'upload', dir:state.dir, password:$('pwd').value});
-  $('download').onclick = ()=> send({type:'download', dir:state.dir, password:$('pwd').value});
+  $('download').onclick = ()=> send({type:'download', dir:state.dir, dlpassword:$('dlpwd').value});
   $('copy').onclick     = ()=> send({type:'copy', text:$('result').value});
 
   // 显示 / 隐藏密码：改用 type=text + CSS -webkit-text-security 自遮罩，
   // 彻底规避 Edge/Chromium 对 type=password 自动叠加的「原生显示密码眼睛」
   // （那个原生控件 CSS 无法隐藏，会出现第二个眼、且功能与我们的切换重复）。
   // 遮罩用 CSS，明文切换走 .visible 类。
-  $('togglePwd').onclick = ()=>{
-    const el = $('pwd');
+  // 显示 / 隐藏密码（上传框 / 取回框共用一套逻辑）
+  function toggleEye(id, btnId){
+    const el = $(id);
     const show = !el.classList.contains('visible');   // 当前遮罩态 → 即将显示明文
     el.classList.toggle('visible', show);
-    $('togglePwd').classList.toggle('on', show);
-    $('togglePwd').title = show ? '隐藏密码' : '显示密码';
+    $(btnId).classList.toggle('on', show);
+    $(btnId).title = show ? '隐藏密码' : '显示密码';
     el.focus();
-  };
+  }
+  $('togglePwd').onclick    = ()=> toggleEye('pwd', 'togglePwd');
+  $('toggleDlPwd').onclick = ()=> toggleEye('dlpwd', 'toggleDlPwd');
 
   // 复制当前密码
   $('copyPwd').onclick = ()=>{
@@ -417,10 +442,23 @@
   }
 
   $('pwd').addEventListener('input', e=>{
-    let v=e.target.value.replace(/[^A-Za-z0-9]/g,'').slice(0,24); e.target.value=v;
+    let v=e.target.value.replace(/[^A-Za-z0-9]/g,'').slice(0,24);
+    // 上传密码框禁止以 SK- 开头（SK 是取回密码专用前缀）：清理掉开头的 SK / sk
+    if(v.slice(0,2).toLowerCase()==='sk'){ v=v.slice(2); log('上传密码不能以 SK- 开头（SK 为取回密码专用）'); }
+    e.target.value=v;
     // 每次变化都把当前密码回传 native，关闭时据此写入 uploader.ini（为空即写空）
     send({type:'password', password:v});
     updatePwdHint(); refresh();
+  });
+  $('dlpwd').addEventListener('input', e=>{
+    // 取回密码框：仅允许字母数字与连字符，且连字符只允许出现在第 3 位（SK- 形态）
+    let v=e.target.value.replace(/[^A-Za-z0-9-]/g,'').slice(0,23);
+    if(v.slice(0,2).toLowerCase()==='sk') v='SK'+v.slice(2);            // 规范为大写 SK
+    if(v.length>=3 && v[2]!=='-') v='SK-'+v.slice(2).replace(/-/g,'');  // 第 3 位自动补连字符
+    if(v.length>3) v=v.slice(0,3)+v.slice(3).replace(/-/g,'');          // 连字符只会出现在第 3 位
+    e.target.value=v;
+    send({type:'dlpassword', dlpassword:v});
+    updateDlHint(); refresh();
   });
   $('path').addEventListener('input', ()=>{ state.dir=''; state.dirValid=false; setVerify(0,'尚未选择目录'); });
 
@@ -441,10 +479,10 @@
       setTimeout(()=>{ if(failNext){ setConn('err','× 服务器连接失败'); log('服务器连接失败'); }
         else{ setConn('ok','✓ 服务器连接成功'); log('服务器连接成功'); } },1000); return; }
     if(obj.type==='detect'){ log('开始检测 saves 目录…');
-      setTimeout(()=>{ setDir('D:\\Games\\League of Legends\\saves',1,'√ 校验通过，已找到 HanBot 缓存目录');
+      setTimeout(()=>{ setDir('D:\\Games\\League of Legends\\saves',1,'校验通过，已找到 Hanbot 目录。');
         log('已找到：D:\\Games\\League of Legends\\saves'); },700); return; }
     if(obj.type==='pick'){ log('（预览）模拟选择目录');
-      setTimeout(()=>{ setDir('D:\\Games\\League of Legends\\saves',1,'√ 校验通过，已找到 HanBot 缓存目录'); },400); return; }
+      setTimeout(()=>{ setDir('D:\\Games\\League of Legends\\saves',1,'校验通过，已找到 Hanbot 目录。'); },400); return; }
     if(obj.type==='upload'||obj.type==='download'){
       const isDl = obj.type==='download'; state.busy=true; refresh();
       $('stage').textContent = isDl?'正在换取下载链接…':'正在加密打包…'; $('bar').style.width='10%';
@@ -452,7 +490,7 @@
       let p=10; const t=setInterval(()=>{ p+=Math.floor(Math.random()*22)+8;
         if(p>=100){ p=100; clearInterval(t);
           const txt = isDl
-            ? '已解压到： '+obj.dir+'\r\n恢复文件： 128 个\r\n下载大小： 4.21 MB\r\n解压大小： 18.6 MB'
+            ? '已解压到： '+obj.dir+'\r\n恢复文件： 128 个\r\n下载大小： 4.21 MB\r\n解压大小： 18.6 MB\r\n取回密码： SK-'+genRandomPwd(20)
             : '密码：       '+obj.password+'\r\n压缩包大小： 2.34 MB（原始 9.8 MB，共 64 个文件）\r\n备份目录：   '+obj.dir+'\r\n完成时间：   2026-08-04 03:13';
           onMessage({type:'done', ok:true, canceled:false, isDownload:isDl, passwordWrong:false, error:'',
             resultText:txt, resultLabel:isDl?'下载结果':'上传结果（请保存密码）', stage:isDl?'下载解压完成':'上传完成', copyEnabled:true});
@@ -464,7 +502,7 @@
   }
 
   $('simConn').onclick = ()=>{ failNext=!failNext; send({type:'health'}); };
-  $('simDir').onclick  = ()=> setDir('D:\\Games\\League of Legends\\saves',1,'√ 校验通过，已找到 hanbot_core.ini');
+  $('simDir').onclick  = ()=> setDir('D:\\Games\\League of Legends\\saves',1,'校验通过，已找到 Hanbot 目录。');
   $('simClear').onclick= ()=> setDir('',0,'尚未选择目录');
 
   log('Hanbot缓存存储器 v1.0.0 已启动');
