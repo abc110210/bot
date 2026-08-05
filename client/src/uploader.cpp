@@ -213,10 +213,14 @@ Outcome Run(const std::wstring& savesDir,
         reqJson += "}";
     }
 
-    // 发送前自检：仅告警、不拦截。拼装异常时仍把脱敏请求体打日志，
-    // 但照常发出请求（与旧版行为一致，避免自检逻辑误杀合法请求）。
-    if (log && !JsonOk(reqJson)) {
-        log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(reqJson));
+    // 发送前自检：拦截并阻断。请求体非法（手拼 JSON 漏逗号等）绝不发出，
+    // 直接报错返回——避免把一个坏请求打到服务端换来 400 / 难排查的诡异失败。
+    // 现在请求体已是普通字符串拼接（合法 JSON），正常路径不会触发此拦截；
+    // 若日后有人改坏拼装，这里会立即拦下，正是该函数的存在意义。
+    if (!JsonOk(reqJson)) {
+        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV");
+        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(reqJson));
+        return out;
     }
 
     const std::wstring tokenUrl = config::BackendBaseUrl + OBFW("L2FwaS91cGxvYWQtdG9rZW4=");
@@ -316,9 +320,11 @@ Outcome Run(const std::wstring& savesDir,
         repJson += "}";
     }
 
-    // 仅告警、不拦截（同 reqJson）
-    if (log && !JsonOk(repJson)) {
-        log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(repJson));
+    // 拦截并阻断（同 reqJson）：非法回报体不发出
+    if (!JsonOk(repJson)) {
+        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV");
+        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(repJson));
+        return out;
     }
 
     const std::wstring reportUrl = config::BackendBaseUrl + OBFW("L2FwaS9yZXBvcnQ=");
@@ -398,8 +404,15 @@ Outcome Download(const std::wstring& savesDir,
         out.error = OBFW("5pyN5Yqh5Zmo5pyq6L+U5Zue5pyJ5pWI55qE5LiL6L295L+h5oGv");
         return out;
     }
+    // key 形如 saves/2026-08-04/2b310b54/saves_2b310b54_...zip
+    // 日志只展示文件名部分（去掉 saves/日期/机器 前缀），并用半角冒号
     out.objectKey = util::Utf8ToWide(key);
-    L(OBFW("5bey5om+5Yiw5a+55bqU5a2Y5qGj77yM5a+56LGh77ya") + out.objectKey);
+    {
+        std::string displayKey = key;
+        auto pos = displayKey.find_last_of('/');
+        if (pos != std::string::npos) displayKey = displayKey.substr(pos + 1);
+        L(L"已找到对应存档，对象:" + util::Utf8ToWide(displayKey));
+    }
 
     // ---------------- 2. 下载到临时文件 ----------------
     P(20, OBFW("5q2j5Zyo5LiL6L29"));

@@ -578,9 +578,9 @@ void HandleOutcome(uploader::Outcome* r) {
     }
 
     if (ok && !canceled && !isDownload) {
-        util::CopyTextToClipboard(g_hMain, resultText);
+        // 已移除自动复制剪贴板：结果展示在「操作结果」框，用户自行点「复制结果」复制
         PostLog(OBFW("PT09PT0g5LiK5Lyg5oiQ5Yqf77yM6K+356uL5Y2z5L+d5a2Y5LiL5pa55a+G56CBID09PT09"));
-        PostLog(OBFW("57uT5p6c5bey6Ieq5Yqo5aSN5Yi25Yiw5Ymq6LS05p2/"));
+        // 「结果已自动复制到剪贴板」提示已移除：结果展示在「操作结果」框，用户自行点「复制结果」复制
     } else if (ok && !canceled && isDownload) {
         PostLog(OBFW("PT09PT0g5LiL6L295bm26Kej5Y6L5a6M5oiQ77yM5paH5Lu25bey6KaG55uW6Iez55uu5qCH55uu5b2VID09PT09"));
     } else if (!ok && !canceled) {
@@ -835,20 +835,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_CLOSE:
         if (g_busy.load()) {
-            const int r = ::MessageBoxW(hwnd,
-                OBFW("5Lu75Yqh5q2j5Zyo6L+b6KGM5Lit77yM56Gu5a6a6KaB5Lit5q2i5bm26YCA5Ye65ZCX77yf"),
-                OBFW("56Gu6K6k6YCA5Ye6"), MB_YESNO | MB_ICONQUESTION);
-            if (r != IDYES) return 0;
+            // 任务进行中：原「确认中止」弹框已按用户要求移除，直接发取消信号让工作线程收尾。
             g_cancel.store(true);
             ::Sleep(200);
         }
         // 关闭时把当前目录与密码写入 uploader.ini 的 [State] 段（密码为空则写空），方便重开直接下载
         config::SaveState(g_lastDir, g_currentPwd);
         if (g_uploadDone.load() && !g_lastResultText.empty()) {
-            const int r = ::MessageBoxW(hwnd,
-                OBFW("5b2T5YmN55uu5b2V5LiO5a+G56CB5bey6Ieq5Yqo5L+d5a2Y5Yiw5pys5py677yM56Gu6K6k6YCA5Ye677yf"),
-                OBFW("56Gu6K6k6YCA5Ye6"), MB_YESNO | MB_ICONINFORMATION);
-            if (r != IDYES) return 0;
+            // 原「密码已自动保存，是否确认退出」确认框已按用户要求移除：直接退出即可。
+            (void)g_lastResultText;
         }
         ::DestroyWindow(hwnd);
         return 0;

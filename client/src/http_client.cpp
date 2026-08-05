@@ -157,8 +157,11 @@ bool OpenChain(const UrlParts& parts,
         return false;
     }
 
-    // 关掉自动重定向之外的一些坑：禁用 keep-alive 复用带来的偶发问题
-    DWORD disableFeature = WINHTTP_DISABLE_COOKIES;
+    // 禁用 keep-alive：每次请求都新建连接，避免「重新上传时偶发 multipart
+    // 截断 / NextPart: EOF」。长连接复用遇到上一次中断的半截响应时会把连接搞脏，
+    // 七牛按 Content-Length 读完却发现 body 提前 EOF，直接 400 拒绝。
+    // 本应用请求频率极低，新建连接的握手开销可忽略。
+    DWORD disableFeature = WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_KEEP_ALIVE;
     ::WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeature, sizeof(disableFeature));
 
     return true;
