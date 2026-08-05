@@ -168,6 +168,11 @@ std::wstring BuildDone(bool ok, bool canceled, bool isDownload, bool pwdWrong,
 std::wstring BuildIcon(const std::wstring& b64) {
     return L"{\"type\":\"icon\",\"data\":\"" + b64 + OBFW("In0=");
 }
+// 上传成功后把后端返回的取回密码(SK-) 回填到页面的「取回密码」框，
+// 让上传者自己也能看到/复制自己的取回码（并随 input 事件写入 config）。
+std::wstring BuildFillDlPwd(const std::wstring& dl) {
+    return L"{\"type\":\"dlpwd\",\"value\":" + JStr(dl) + OBFW("fQ==");
+}
 
 // 随机生成密码的查重结果（worker 线程 -> UI 线程）
 struct PwdCheckResult {
@@ -575,6 +580,18 @@ void HandleOutcome(uploader::Outcome* r) {
         resultLabel = OBFW("5LiK5Lyg57uT5p6c77yI6K+35L+d5a2Y5a+G56CB77yJ");          // 上传结果（请保存密码）
         stage = OBFW("5LiK5Lyg5a6M5oiQ");                                           // 上传完成
         copyEnabled = true;
+
+        // 上传成功后把后端返回的取回密码(SK-) 回填「取回密码」框并写入 config：
+        // ① 上传者自己能在软件里看到/复制自己的取回码；② 关闭时 DownloadPassword 不再为空。
+        if (!r->downloadPassword.empty()) {
+            g_currentDlPwd = r->downloadPassword;
+            PostJson(BuildFillDlPwd(r->downloadPassword));
+        }
+    }
+
+    // 防御：理论上上传成功必带结果文案；万一为空（异常路径）也兜底给一句，避免结果框空白。
+    if (ok && !canceled && !isDownload && resultText.empty()) {
+        resultText = OBFW("5LiK5Lyg5a6M5oiQ77yM6K+35L+d5L+d5a2Y5a+G56CB");   // 上传完成，请保存密码
     }
 
     if (ok && !canceled) {
