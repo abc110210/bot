@@ -328,17 +328,28 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
                 res.error = OBFW("5Yib5bu655uu5b2V5aSx6LSl77ya") + outPath;
                 closeFile(); return res;
             }
-            HANDLE out = ::CreateFileW(outPath.c_str(), GENERIC_WRITE, 0, nullptr,
-                                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+            // 2026-08-06 修复：目标文件若带「只读」属性（LoL 生成的缓存数据常如此），
+            // CREATE_ALWAYS 会直接失败（err=5 拒绝访问）；且共享模式 0（独占）在文件被
+            // 其它进程以共享方式打开时也会失败。这里写前先清掉只读等属性，并放宽共享
+            // 模式（允许其它进程读/写/删本文件，对游戏缓存数据安全），从根上避免
+            // 「解压写入失败」。仍保留 GetLastError 便于极端情况定位。
+            ::SetFileAttributesW(outPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+            HANDLE out = ::CreateFileW(outPath.c_str(), GENERIC_WRITE,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                       nullptr, CREATE_ALWAYS,
+                                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
             if (out == INVALID_HANDLE_VALUE) {
-                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath;
+                // 5=拒绝访问(权限/只读)，32=被独占占用，112=磁盘满
+                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
+                            L" (err=" + std::to_wstring(::GetLastError()) + L")";
                 closeFile(); return res;
             }
 
             bool ioOk = true;
             auto failWrite = [&]() {
                 ioOk = false;
-                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath;
+                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
+                            L" (err=" + std::to_wstring(::GetLastError()) + L")";
             };
 
             if (!SeekTo(h, dataStart)) { ::CloseHandle(out); closeFile(); return res; }

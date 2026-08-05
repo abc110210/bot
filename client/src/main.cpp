@@ -117,7 +117,10 @@ std::wstring BuildInit(const std::wstring& password = L"",
     std::wstring s = std::wstring(L"{\"type\":\"init\",\"app\":") + JStr(APP_TITLE_W) +
                      OBFW("LCJ2ZXJzaW9uIjoiMS4wLjAi");
     if (!password.empty()) s += OBFW("LCJwYXNzd29yZCI6") + JStr(password);
-    if (!downloadPassword.empty()) s += OBFW("LCJkb3dubG9hZFBhc3N3b3JkIjoi") + JStr(downloadPassword);
+    // ⚠️ 此前的 "LCJkb3dubG9hZFBhc3N3b3JkIjoi" 解码为 ,"downloadPassword":"（末尾带开引号），
+    // 再拼 JStr() 的自带引号 → 双引号嵌套 → 非法 JSON → init 消息被整体丢弃 →
+    // 密码/取回密码不回填（目录走独立消息所以正常）。正确应为 ,"downloadPassword":（Ijo=）。
+    if (!downloadPassword.empty()) s += OBFW("LCJkb3dubG9hZFBhc3N3b3JkIjo=") + JStr(downloadPassword);
     s += OBFW("fQ==");
     return s;
 }
