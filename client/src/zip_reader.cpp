@@ -75,19 +75,25 @@ bool ReadExact(HANDLE h, void* buf, size_t n) {
 // 逐层创建目录（已存在则忽略）。支持带 `\\?\` 前缀的长路径：
 // 前缀部分（\\?\ 或 \\?\UNC\）不当作分隔符拆分，从其后开始逐级 CreateDirectoryW。
 bool EnsureDirExists(const std::wstring& dir) {
+    // 长路径前缀处理：确定「根前缀」长度，使后续节点拼出完整有效路径。
+    //   \\?\X:   -> 6（含盘符，如 \\?\D:；后续从 D: 之后开始，full 形如 \\?\D:\X）
+    //   \\?\UNC\ -> 8（UNC；本地解压不用，按整体前缀处理）
+    //   普通绝对路径 -> 0（如 D:\...，卷根 D: 由下方 isDriveRoot 跳过）
+    // 2026-08-06 修复回归：上一版把前缀固定为 4（\\?\），再用 isDriveRoot 跳过 acc 里的
+    // "D:" 节点，导致后续节点拼成 "\\?\LOL"（丢了盘符 D:）→ CreateDirectoryW 失败 →
+    // CreateParentDirs 误返回 false → 解压报「创建目录失败」。必须把 \\?\X: 整体（6 字符）
+    // 当作前缀，后续 full = "\\?\D:\" + acc 才正确。
     size_t prefixLen = 0;
     if (dir.size() >= 4 && dir[0] == L'\\' && dir[1] == L'\\' &&
         dir[2] == L'?' && dir[3] == L'\\') {
-        prefixLen = 4;
+        if (dir.size() >= 6 && dir[5] == L':') prefixLen = 6;   // \\?\X:
+        else prefixLen = 4;
     } else if (dir.size() >= 8 && dir.compare(0, 8, L"\\\\?\\UNC\\") == 0) {
         prefixLen = 8;
     }
 
-    // 跳过「卷根」（如 D: / \\?\D:）——它已存在，对其 CreateDirectoryW 会失败且
-    // 错误码不定（带 \\?\ 前缀时往往不是 ERROR_ALREADY_EXISTS），若当普通目录处理会
-    // 误判失败。2026-08-06 修复：加长路径前缀后这一步曾把卷根误伤为「待建目录」，
-    // 导致 CreateParentDirs 返回 false、上层 || 短路使 WriteWholeFile 不执行、werr=0
-    // 误报「err=0 未知错误」（实际是父目录创建被前缀误伤，与占用无关）。
+    // 普通绝对路径（无前缀）的卷根 "D:" 也跳过：CreateDirectoryW("D:") 错误码不定，
+    // 不当普通目录处理，避免误判失败。
     auto isDriveRoot = [](const std::wstring& s) {
         return s.size() == 2 && s[1] == L':';
     };
