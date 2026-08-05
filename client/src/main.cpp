@@ -789,7 +789,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_GETMINMAXINFO: {
         MINMAXINFO* mmi = (MINMAXINFO*)lp;
         mmi->ptMinTrackSize.x = S(680);
-        mmi->ptMinTrackSize.y = S(640);
+        // 最小高度从 640 抬到 720：640 时下半部日志区只剩约 72px，3 行日志就出滚动条。
+        // 720 才能保证「运行日志」+「操作结果」两框在最小窗口下都舒服放下、不出滚动条。
+        mmi->ptMinTrackSize.y = S(720);
         return 0;
     }
 
