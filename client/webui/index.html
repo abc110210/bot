@@ -114,9 +114,9 @@
 
   .pwd{flex:1;min-width:0;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
        padding:0 14px;font-size:14px;color:var(--ink);outline:none;letter-spacing:3px;transition:.16s;font-family:var(--font);position:relative;z-index:1;
-       -webkit-user-select:text;user-select:text}
+       -webkit-user-select:text;user-select:text;-webkit-text-security:disc}
   .pwd:focus{border-color:var(--rose);box-shadow:0 0 0 4px rgba(255,126,179,.14);background:#fff}
-  .pwd.visible{letter-spacing:1px}   /* 明文显示时收紧字距 */
+  .pwd.visible{letter-spacing:1px;-webkit-text-security:none}   /* 明文显示时收紧字距 + 取消 CSS 遮罩 */
   .pwd-eye{width:42px;padding:0;display:flex;align-items:center;justify-content:center}
   .pwd-eye svg{width:18px;height:18px;display:none;fill:none;stroke:var(--ink-soft);stroke-width:1.6;
                stroke-linecap:round;stroke-linejoin:round;transition:.16s}
@@ -231,7 +231,7 @@
 
         <div class="label">密码设置（4–24 位字母 / 数字）</div>
         <div class="row">
-          <input class="pwd" id="pwd" type="password" placeholder="取回与上传都需用同一密码" maxlength="24">
+          <input class="pwd" id="pwd" type="text" autocomplete="off" placeholder="取回与上传都需用同一密码" maxlength="24">
           <button class="btn pwd-eye" id="togglePwd" type="button" title="显示密码" aria-label="显示密码">
             <svg viewBox="0 0 16 16" class="eye-open"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/></svg>
             <svg viewBox="0 0 16 16" class="eye-closed"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>
@@ -344,6 +344,8 @@
 
   function showDone(m){
     $('resLabel').textContent = m.resultLabel || '操作结果';
+    // 每次新结果先清空旧文本，避免「复制结果」把多次操作的结果累加起来
+    $('result').value = '';
     $('result').value = m.resultText || '';
     $('stage').textContent = m.stage || '就绪';
     $('stage').style.color = (!m.ok && !m.canceled) ? 'var(--warn)' : '';
@@ -374,11 +376,13 @@
   $('download').onclick = ()=> send({type:'download', dir:state.dir, password:$('pwd').value});
   $('copy').onclick     = ()=> send({type:'copy', text:$('result').value});
 
-  // 显示 / 隐藏密码
+  // 显示 / 隐藏密码：改用 type=text + CSS -webkit-text-security 自遮罩，
+  // 彻底规避 Edge/Chromium 对 type=password 自动叠加的「原生显示密码眼睛」
+  // （那个原生控件 CSS 无法隐藏，会出现第二个眼、且功能与我们的切换重复）。
+  // 遮罩用 CSS，明文切换走 .visible 类。
   $('togglePwd').onclick = ()=>{
     const el = $('pwd');
-    const show = el.type === 'password';
-    el.type = show ? 'text' : 'password';
+    const show = !el.classList.contains('visible');   // 当前遮罩态 → 即将显示明文
     el.classList.toggle('visible', show);
     $('togglePwd').classList.toggle('on', show);
     $('togglePwd').title = show ? '隐藏密码' : '显示密码';
