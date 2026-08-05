@@ -334,10 +334,14 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
             // 模式（允许其它进程读/写/删本文件，对游戏缓存数据安全），从根上避免
             // 「解压写入失败」。仍保留 GetLastError 便于极端情况定位。
             ::SetFileAttributesW(outPath.c_str(), FILE_ATTRIBUTE_NORMAL);
-            HANDLE out = ::CreateFileW(outPath.c_str(), GENERIC_WRITE,
-                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                       nullptr, CREATE_ALWAYS,
-                                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+            HANDLE out = INVALID_HANDLE_VALUE;
+            for (int attempt = 0; attempt < 4 && out == INVALID_HANDLE_VALUE; ++attempt) {
+                if (attempt > 0) ::Sleep(300);   // 瞬时占用（杀毒/索引）等待后重试
+                out = ::CreateFileW(outPath.c_str(), GENERIC_WRITE,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, CREATE_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+            }
             if (out == INVALID_HANDLE_VALUE) {
                 // 5=拒绝访问(权限/只读)，32=被独占占用，112=磁盘满
                 res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
