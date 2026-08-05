@@ -83,15 +83,26 @@ bool EnsureDirExists(const std::wstring& dir) {
         prefixLen = 8;
     }
 
+    // 跳过「卷根」（如 D: / \\?\D:）——它已存在，对其 CreateDirectoryW 会失败且
+    // 错误码不定（带 \\?\ 前缀时往往不是 ERROR_ALREADY_EXISTS），若当普通目录处理会
+    // 误判失败。2026-08-06 修复：加长路径前缀后这一步曾把卷根误伤为「待建目录」，
+    // 导致 CreateParentDirs 返回 false、上层 || 短路使 WriteWholeFile 不执行、werr=0
+    // 误报「err=0 未知错误」（实际是父目录创建被前缀误伤，与占用无关）。
+    auto isDriveRoot = [](const std::wstring& s) {
+        return s.size() == 2 && s[1] == L':';
+    };
+
     std::wstring acc;
     for (size_t i = prefixLen; i < dir.size(); ++i) {
         const wchar_t c = dir[i];
         if (c == L'\\' || c == L'/') {
             if (!acc.empty()) {
-                const std::wstring full = dir.substr(0, prefixLen) + acc;
-                if (!::CreateDirectoryW(full.c_str(), nullptr)) {
-                    const DWORD e = ::GetLastError();
-                    if (e != ERROR_ALREADY_EXISTS) return false;
+                if (!isDriveRoot(acc)) {
+                    const std::wstring full = dir.substr(0, prefixLen) + acc;
+                    if (!::CreateDirectoryW(full.c_str(), nullptr)) {
+                        const DWORD e = ::GetLastError();
+                        if (e != ERROR_ALREADY_EXISTS) return false;
+                    }
                 }
                 acc.clear();
             }
@@ -99,7 +110,7 @@ bool EnsureDirExists(const std::wstring& dir) {
             acc.push_back(c);
         }
     }
-    if (!acc.empty()) {
+    if (!acc.empty() && !isDriveRoot(acc)) {
         const std::wstring full = dir.substr(0, prefixLen) + acc;
         if (!::CreateDirectoryW(full.c_str(), nullptr)) {
             const DWORD e = ::GetLastError();
@@ -326,9 +337,15 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
                 res.error = OBFW("6Kej5Y6L5aSx6LSl77yI5pWw5o2u5Y+v6IO95bey5o2f5Z2P77yJ77ya") + util::Utf8ToWide(e.nameUtf8);
                 closeFile(); return res;
             }
+            // 2026-08-06 修复：父目录创建与写文件分开判定。旧写法用 || 短路，父目录
+            // 失败时 WriteWholeFile 根本不执行、werr 保持 0，误报「err=0 未知错误」
+            // （实际是父目录创建被长路径前缀误伤，与真实写入错误无关）。
+            if (!CreateParentDirs(outPath)) {
+                res.error = OBFW("5Yib5bu655uu5b2V5aSx6LSl77ya") + outPath;
+                closeFile(); return res;
+            }
             DWORD werr = 0;
-            if (!CreateParentDirs(outPath) ||
-                !util::WriteWholeFile(outPath, plain.data(), plain.size(), &werr)) {
+            if (!util::WriteWholeFile(outPath, plain.data(), plain.size(), &werr)) {
                 wchar_t lenBuf[40]{};
                 ::swprintf(lenBuf, 40, L" [路径长度=%llu]", (unsigned long long)outPath.size());
                 res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
