@@ -160,16 +160,18 @@
        font:12px/1.65 "Cascadia Mono",Consolas,monospace;padding:11px 13px;resize:none;outline:none;
        -webkit-user-select:text;user-select:text}
   .box:focus{border-color:var(--peri);background:#fff}
-  /* 细的、贴近系统风格的滚动条（仅日志/结果内部）。
+  /* 细的、贴近系统风格的滚动条（日志/结果内部）。
      关键：用 ::-webkit-scrollbar-button{display:none} 干掉 Chromium/WebView2 默认
      出现在滚动条上下的「三角形箭头」——那两个箭头在窄滚动条上特别丑，
-     用户明确要去掉。thumb 用细圆角 + 留白内边距，观感干净。 */
-  .box{scrollbar-width:thin;scrollbar-color:#d4c4e6 transparent}
-  .box::-webkit-scrollbar{width:8px;height:8px}
-  .box::-webkit-scrollbar-button{display:none;width:0;height:0}   /* 去掉上下三角箭头 */
-  .box::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
-  .box::-webkit-scrollbar-thumb:hover{background:#bda8dd}
-  .box::-webkit-scrollbar-track{background:transparent}
+     用户明确要去掉。thumb 用细圆角 + 留白内边距，观感干净。
+     选择器同时包含 .box（含 .result）和独立的 .log——之前只对 .box 生效，.log
+     的滚动条没被处理，所以截图里运行日志还显示着上下三角。 */
+  .box,.log{scrollbar-width:thin;scrollbar-color:#d4c4e6 transparent}
+  .box::-webkit-scrollbar,.log::-webkit-scrollbar{width:8px;height:8px}
+  .box::-webkit-scrollbar-button,.log::-webkit-scrollbar-button{display:none;width:0;height:0}   /* 去掉上下三角箭头 */
+  .box::-webkit-scrollbar-thumb,.log::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+  .box::-webkit-scrollbar-thumb:hover,.log::-webkit-scrollbar-thumb:hover{background:#bda8dd}
+  .box::-webkit-scrollbar-track,.log::-webkit-scrollbar-track{background:transparent}
   /* 日志区是唯一可伸缩区域：弹性铺满下半部剩余空间，最小高度 96px（约 4 行）。
      窗口被拉高时日志随之变长；只有日志特别长才内部滚动（且已无三角箭头）。 */
   .log{flex:1 1 auto;min-height:96px;overflow:auto;white-space:pre-wrap}
