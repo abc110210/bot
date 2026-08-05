@@ -104,6 +104,10 @@ std::wstring JStr(const std::wstring& s) {
 }
 std::wstring WBool(bool b) { return b ? OBFW("dHJ1ZQ==") : OBFW("ZmFsc2U="); }
 
+// BuildDone 里的临时诊断要调 PostLog（其定义在本文件更后面），前置声明一下。
+void PostLog(const std::wstring& text);
+
+
 void PostJson(const std::wstring& json) {
     if (g_webview && g_pageReady)
         g_webview->PostWebMessageAsString(json.c_str());
