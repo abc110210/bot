@@ -75,7 +75,7 @@
   .accent{height:3px;flex:none;background:var(--grad-twin)}
 
   /* 窗口主体：外层不滚动，仅日志区内部滚动 */
-  .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 18px;position:relative;overflow:hidden}
+  .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 16px;position:relative;overflow:hidden}
   .body::before{content:"";position:absolute;top:-40px;right:-30px;width:200px;height:200px;border-radius:50%;
     background:radial-gradient(circle,rgba(255,158,194,.14),transparent 70%);pointer-events:none}
   .body::after{content:"";position:absolute;bottom:-30px;left:-30px;width:180px;height:180px;border-radius:50%;
@@ -86,7 +86,7 @@
   .top{flex:none;position:relative;z-index:1}
 
   /* 连接状态（紧凑药丸） */
-  .connrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .connrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
   .conn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13px;
         background:#f6f2fb;padding:7px 14px;border-radius:999px;border:1px solid var(--line)}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint);box-shadow:0 0 0 4px rgba(155,144,171,.16);transition:.3s}
@@ -97,22 +97,22 @@
          padding:6px 13px;border-radius:999px;cursor:pointer;transition:.16s}
   .retry:hover{border-color:var(--rose);color:var(--rose-deep)}
 
-  .label{font-size:13px;font-weight:700;color:var(--ink);margin:12px 0 6px;letter-spacing:.3px;position:relative;z-index:1}
+  .label{font-size:13px;font-weight:700;color:var(--ink);margin:6px 0 2px;letter-spacing:.3px;position:relative;z-index:1}
   .label:first-of-type{margin-top:0}
   .row{display:flex;gap:9px;position:relative;z-index:1}
-  .input{flex:1;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
+  .input{flex:1;height:38px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
          padding:0 14px;font-size:14px;color:var(--ink);outline:none;transition:.16s;font-family:var(--font);
          -webkit-user-select:text;user-select:text}
   .input::placeholder{color:var(--ink-faint)}
   .input:focus{border-color:var(--rose);box-shadow:0 0 0 4px rgba(255,126,179,.14);background:#fff}
-  .btn{flex:none;height:42px;padding:0 16px;border-radius:12px;border:1.5px solid var(--line);
+  .btn{flex:none;height:38px;padding:0 14px;border-radius:12px;border:1.5px solid var(--line);
        background:#fff;color:var(--ink);font-weight:700;font-size:13px;cursor:pointer;transition:.16s;font-family:var(--font)}
   .btn:hover{border-color:var(--peri);color:var(--peri-deep);transform:translateY(-1px)}
 
-  .verify{margin-top:6px;font-size:12.5px;font-weight:600;color:var(--ink-soft);position:relative;z-index:1}
+  .verify{margin-top:3px;font-size:12.5px;font-weight:600;color:var(--ink-soft);position:relative;z-index:1}
   .verify.ok{color:var(--ok)} .verify.err{color:var(--warn)}
 
-  .pwd{flex:1;min-width:0;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
+  .pwd{flex:1;min-width:0;height:38px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
        padding:0 14px;font-size:14px;color:var(--ink);outline:none;letter-spacing:3px;transition:.16s;font-family:var(--font);position:relative;z-index:1;
        -webkit-user-select:text;user-select:text;-webkit-text-security:disc}
   .pwd:focus{border-color:var(--rose);box-shadow:0 0 0 4px rgba(255,126,179,.14);background:#fff}
@@ -125,26 +125,26 @@
   .pwd-eye.on svg.eye-open{display:none}
   .pwd-eye.on svg.eye-closed{display:block}
   .pwd-eye.on svg{stroke:var(--peri-deep)}
-  .hint{margin-top:6px;font-size:12px;color:var(--ink-soft);line-height:1.6;position:relative;z-index:1}
+  .hint{margin-top:3px;font-size:12px;color:var(--ink-soft);line-height:1.55;position:relative;z-index:1}
   .hint.ok{color:var(--ok)} .hint.err{color:var(--warn)}
 
-  .actions{display:flex;gap:12px;margin-top:12px;position:relative;z-index:1}
-  .primary{flex:1;height:46px;border:none;border-radius:14px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.5px;
+  .actions{display:flex;gap:12px;margin-top:8px;position:relative;z-index:1}
+  .primary{flex:1;height:42px;border:none;border-radius:14px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.5px;
            cursor:pointer;transition:.2s;box-shadow:0 12px 26px rgba(150,110,200,.28);font-family:var(--font);position:relative;z-index:1}
   .primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none}
   .up{background:var(--grad-rose)} .up:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(255,94,156,.36)}
   .down{background:var(--grad-peri)} .down:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(91,134,240,.34)}
 
-  .progress{height:9px;border-radius:999px;background:#efe8f6;overflow:hidden;margin-top:12px;position:relative;z-index:1}
+  .progress{height:9px;border-radius:999px;background:#efe8f6;overflow:hidden;margin-top:6px;position:relative;z-index:1}
   .bar{height:100%;width:0%;border-radius:999px;background:var(--grad-twin);transition:width .35s ease}
-  .stage{font-size:12px;color:var(--ink-soft);margin-top:6px;font-weight:600;position:relative;z-index:1}
+  .stage{font-size:12px;color:var(--ink-soft);margin-top:3px;font-weight:600;position:relative;z-index:1}
 
   /* 下半部：日志可伸缩，结果/页脚固定；overflow:hidden 保证任何情况下都是「裁掉」而不是「叠上去」 */
-  .lower{flex:1;min-height:0;display:flex;flex-direction:column;margin-top:10px;position:relative;z-index:1;overflow-y:auto}
+  .lower{flex:1;min-height:0;display:flex;flex-direction:column;margin-top:10px;position:relative;z-index:1;overflow:hidden}
   .logpanel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
   .logpanel .label{margin-top:0}
   .panel{flex:none;position:relative;z-index:1}
-  .panel > .label{margin:12px 0 6px}
+  .panel > .label{margin:6px 0 2px}
   /* 结果框：边框放在外层 wrapper 上，textarea 去自身边框。
      这样可彻底避免 Chromium/WebView2 下滚动内容把底部边框裁掉、出现“底边缺失”的观感；
      聚焦高亮也移到 wrapper 上（:focus-within），边框始终完整可见。 */
@@ -170,8 +170,9 @@
   .box::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
   .box::-webkit-scrollbar-thumb:hover{background:#bda8dd}
   .box::-webkit-scrollbar-track{background:transparent}
-  /* 日志区是唯一可伸缩的区域：正常窗口高度下约 5~7 行，窗口被压矮时优先收缩它 */
-  .log{flex:1 1 auto;min-height:0;height:96px;overflow:auto;white-space:pre-wrap}
+  /* 日志区是唯一可伸缩区域：弹性铺满下半部剩余空间，且最小高度 88px（约 3~4 行）。
+     窗口压到最小 720px 时仍保证空闲态（约 3 行日志）不出滚动条；只有日志特别长才内部滚动（且已无三角箭头）。 */
+  .log{flex:1 1 auto;min-height:88px;overflow:auto;white-space:pre-wrap}
   /* 结果框：典型「请记好以下信息 + 上传密码 + 取回密码」3 行约 63px，
      把 max-height 放宽到 120px，正常情况下绝不出现滚动条；仅极长内容才滚动（且已无箭头）。 */
   .result{flex:none;min-height:52px;height:auto;max-height:120px;overflow:auto;
@@ -197,7 +198,7 @@
     .progress{margin-top:12px}
     .stage{margin-top:6px}
     .lower{margin-top:10px}
-    .log{height:80px}
+    .log{min-height:80px}
     .result{height:52px}
     .footer{margin-top:8px;font-size:11px}
   }
@@ -245,7 +246,7 @@
           <button class="btn" id="copyPwd">复制</button>
           <button class="btn" id="genPwd">随机生成</button>
         </div>
-        <div class="hint" id="hint">请输入 4~24 位字母或数字（不能含 SK- 前缀，那是取回密码专用）；同一上传密码再次上传会覆盖原存档</div>
+        <div class="hint" id="hint">4~24 位字母/数字，不含 SK- 前缀；重复上传将覆盖原存档</div>
 
         <div class="label">取回密码（SK- 开头，共 23 位）</div>
         <div class="row">
@@ -255,7 +256,7 @@
             <svg viewBox="0 0 16 16" class="eye-closed"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2.2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>
           </button>
         </div>
-        <div class="hint" id="dlhint">上传成功后，取回密码会显示在下方「操作结果」框；把它发给好友，对方即可取回你的存档</div>
+        <div class="hint" id="dlhint">上传成功后自动显示在此处，复制发给好友即可取回</div>
 
         <div class="actions">
           <button class="primary up" id="upload" disabled>📤 打包并上传</button>
@@ -306,7 +307,7 @@
 
   // 随机密码字符表（不含易混淆字符）
   const PWD_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const DEFAULT_HINT = '请输入 4~24 位字母或数字（不能含 SK- 前缀，那是取回密码专用）；同一上传密码再次上传会覆盖原存档';
+  const DEFAULT_HINT = '4~24 位字母/数字，不含 SK- 前缀；重复上传将覆盖原存档';
 
   // 随机生成密码的查重回调（只用于「随机生成密码」按钮；手动输入不查重）
   let pwdCheckCb = null, pwdCheckTarget = '';
