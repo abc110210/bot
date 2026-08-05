@@ -86,7 +86,7 @@
   .top{flex:none;position:relative;z-index:1}
 
   /* 连接状态（紧凑药丸） */
-  .connrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .connrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .conn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13px;
         background:#f6f2fb;padding:7px 14px;border-radius:999px;border:1px solid var(--line)}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint);box-shadow:0 0 0 4px rgba(155,144,171,.16);transition:.3s}
@@ -97,7 +97,7 @@
          padding:6px 13px;border-radius:999px;cursor:pointer;transition:.16s}
   .retry:hover{border-color:var(--rose);color:var(--rose-deep)}
 
-  .label{font-size:13px;font-weight:700;color:var(--ink);margin:16px 0 7px;letter-spacing:.3px;position:relative;z-index:1}
+  .label{font-size:13px;font-weight:700;color:var(--ink);margin:12px 0 6px;letter-spacing:.3px;position:relative;z-index:1}
   .label:first-of-type{margin-top:0}
   .row{display:flex;gap:9px;position:relative;z-index:1}
   .input{flex:1;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
@@ -109,7 +109,7 @@
        background:#fff;color:var(--ink);font-weight:700;font-size:13px;cursor:pointer;transition:.16s;font-family:var(--font)}
   .btn:hover{border-color:var(--peri);color:var(--peri-deep);transform:translateY(-1px)}
 
-  .verify{margin-top:9px;font-size:12.5px;font-weight:600;color:var(--ink-soft);position:relative;z-index:1}
+  .verify{margin-top:6px;font-size:12.5px;font-weight:600;color:var(--ink-soft);position:relative;z-index:1}
   .verify.ok{color:var(--ok)} .verify.err{color:var(--warn)}
 
   .pwd{flex:1;min-width:0;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fcfbff;
@@ -125,22 +125,22 @@
   .pwd-eye.on svg.eye-open{display:none}
   .pwd-eye.on svg.eye-closed{display:block}
   .pwd-eye.on svg{stroke:var(--peri-deep)}
-  .hint{margin-top:8px;font-size:12px;color:var(--ink-soft);line-height:1.6;position:relative;z-index:1}
+  .hint{margin-top:6px;font-size:12px;color:var(--ink-soft);line-height:1.6;position:relative;z-index:1}
   .hint.ok{color:var(--ok)} .hint.err{color:var(--warn)}
 
-  .actions{display:flex;gap:12px;margin-top:18px;position:relative;z-index:1}
-  .primary{flex:1;height:52px;border:none;border-radius:14px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.5px;
+  .actions{display:flex;gap:12px;margin-top:12px;position:relative;z-index:1}
+  .primary{flex:1;height:46px;border:none;border-radius:14px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.5px;
            cursor:pointer;transition:.2s;box-shadow:0 12px 26px rgba(150,110,200,.28);font-family:var(--font);position:relative;z-index:1}
   .primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none}
   .up{background:var(--grad-rose)} .up:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(255,94,156,.36)}
   .down{background:var(--grad-peri)} .down:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(91,134,240,.34)}
 
-  .progress{height:9px;border-radius:999px;background:#efe8f6;overflow:hidden;margin-top:18px;position:relative;z-index:1}
+  .progress{height:9px;border-radius:999px;background:#efe8f6;overflow:hidden;margin-top:12px;position:relative;z-index:1}
   .bar{height:100%;width:0%;border-radius:999px;background:var(--grad-twin);transition:width .35s ease}
-  .stage{font-size:12px;color:var(--ink-soft);margin-top:8px;font-weight:600;position:relative;z-index:1}
+  .stage{font-size:12px;color:var(--ink-soft);margin-top:6px;font-weight:600;position:relative;z-index:1}
 
   /* 下半部：日志可伸缩，结果/页脚固定；overflow:hidden 保证任何情况下都是「裁掉」而不是「叠上去」 */
-  .lower{flex:1;min-height:0;display:flex;flex-direction:column;margin-top:14px;position:relative;z-index:1;overflow:hidden}
+  .lower{flex:1;min-height:0;display:flex;flex-direction:column;margin-top:10px;position:relative;z-index:1;overflow-y:auto}
   .logpanel{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
   .logpanel .label{margin-top:0}
   .panel{flex:none;position:relative;z-index:1}
@@ -167,14 +167,14 @@
   .box::-webkit-scrollbar-thumb:hover{background:#c4b2e0}
   .box::-webkit-scrollbar-track{background:transparent}
   /* 日志区是唯一可伸缩的区域：正常窗口高度下约 5~7 行，窗口被压矮时优先收缩它 */
-  .log{flex:1 1 auto;min-height:0;height:126px;overflow:auto;white-space:pre-wrap}
+  .log{flex:1 1 auto;min-height:0;height:80px;overflow:auto;white-space:pre-wrap}
   .result{flex:none;min-height:52px;height:auto;max-height:90px;overflow:auto;
           border:none;border-radius:0;background:transparent;width:100%}
 
-  .footer{flex:none;margin-top:12px;font-size:11.5px;color:var(--ink-faint);line-height:1.6;position:relative;z-index:1}
+  .footer{flex:none;margin-top:8px;font-size:11.5px;color:var(--ink-faint);line-height:1.6;position:relative;z-index:1}
 
   /* 预览调试条（仅用于确认状态，真实窗口无此条） */
-  .debug{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1}
+  .debug{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1}
   .debug button{border:1px dashed #d9c6ec;background:#fff;color:#8a6fae;font-size:11.5px;font-weight:600;
                  padding:6px 11px;border-radius:9px;cursor:pointer;transition:.16s;font-family:var(--font)}
   .debug button:hover{background:#f6eeff;border-color:var(--rose)}
@@ -296,7 +296,7 @@
 
   let state = { dir:'', dirValid:false, connOk:false, busy:false };
   const validPwd = v => /^[A-Za-z0-9]{4,24}$/.test(v);
-  const validDlPwd = v => /^SK-[A-Za-z0-9]{20}$/.test(v);   // 取回密码：SK- + 20 位字母数字，共 23 位
+  const validDlPwd = v => /^SK-[A-Za-z0-9]{20}$/i.test(v);   // 取回密码：SK- + 20 位字母数字，大小写均可，共 23 位
 
   // 随机密码字符表（不含易混淆字符）
   const PWD_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
@@ -328,9 +328,9 @@
   function updateDlHint(){
     const v = $('dlpwd').value;
     if(v === '') setDlHint(0, '上传成功后，取回密码会显示在下方「操作结果」框；把它发给好友，对方即可取回你的存档');
-    else if(v.startsWith('SK') && !validDlPwd(v)) setDlHint(2, '请输入完整的下载密码');
     else if(validDlPwd(v)) setDlHint(1, '✓ 取回密码格式有效');
-    else setDlHint(2, '取回密码须以 SK- 开头（共 23 位）');
+    else if(v.startsWith('SK')) setDlHint(2, '请输入完整的下载密码');   // 前提：前缀 SK- 正确，只是还没输满
+    else setDlHint(2, '取回密码必须以SK-开头');                          // 非 SK- 开头统一提示
   }
   function setConn(s,t){ const c=$('conn'); c.className='conn '+s; $('connText').textContent=t; state.connOk=(s==='ok'); refresh(); }
   function setDir(path,vs,vt){ state.dir=path; state.dirValid=(vs===1); $('path').value=path; setVerify(vs===1?'ok':(vs===2?'err':''), vt); }
@@ -451,11 +451,19 @@
     updatePwdHint(); refresh();
   });
   $('dlpwd').addEventListener('input', e=>{
-    // 取回密码框：仅允许字母数字与连字符，且连字符只允许出现在第 3 位（SK- 形态）
+    // 取回密码框：仅允许字母数字与连字符，连字符只允许出现在第 3 位（SK- 形态）。
+    // 关键修复：只有用户已输入 sk/SK 前缀时才做规范化；数字/其它字符绝不强行加前缀（避免误判 BUG）。
     let v=e.target.value.replace(/[^A-Za-z0-9-]/g,'').slice(0,23);
-    if(v.slice(0,2).toLowerCase()==='sk') v='SK'+v.slice(2);            // 规范为大写 SK
-    if(v.length>=3 && v[2]!=='-') v='SK-'+v.slice(2).replace(/-/g,'');  // 第 3 位自动补连字符
-    if(v.length>3) v=v.slice(0,3)+v.slice(3).replace(/-/g,'');          // 连字符只会出现在第 3 位
+    if(v.length>=2 && v.slice(0,2).toLowerCase()==='sk'){
+      v='SK'+v.slice(2);                                                  // 规范前缀大写
+      if(v.length>=3 && v[2]!=='-') v='SK-'+v.slice(2).replace(/-/g,'');  // 第 3 位补连字符
+      if(v.length>3) v=v.slice(0,3)+v.slice(3).replace(/-/g,'');          // 连字符只会出现在第 3 位
+    } else {
+      // 非 sk 前缀（如纯数字 / 只输入了单个 s）：不补全前缀，仅去掉误输入的连字符，交给下方提示「必须以 SK- 开头」
+      v=v.replace(/-/g,'');
+    }
+    // 取回密码大小写不敏感：整体规范为大写再回传/存储（服务端按大写比对），输入小写也能被识别
+    v=v.toUpperCase();
     e.target.value=v;
     send({type:'dlpassword', dlpassword:v});
     updateDlHint(); refresh();
