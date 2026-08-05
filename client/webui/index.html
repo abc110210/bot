@@ -165,10 +165,12 @@
      出现在滚动条上下的「三角形箭头」——那两个箭头在窄滚动条上特别丑，
      用户明确要去掉。thumb 用细圆角 + 留白内边距，观感干净。
      选择器同时包含 .box（含 .result）和独立的 .log——之前只对 .box 生效，.log
-     的滚动条没被处理，所以截图里运行日志还显示着上下三角。 */
+     的滚动条没被处理，所以截图里运行日志还显示着上下三角。
+     2026-08-06 加强制：加 !important + -webkit-appearance: none（WebView2/新版
+     Chromium 对 ::-webkit-scrollbar-button 默认隐藏有兼容性差异，必须显式 +!important）。 */
   .box,.log{scrollbar-width:thin;scrollbar-color:#d4c4e6 transparent}
   .box::-webkit-scrollbar,.log::-webkit-scrollbar{width:8px;height:8px}
-  .box::-webkit-scrollbar-button,.log::-webkit-scrollbar-button{display:none;width:0;height:0}   /* 去掉上下三角箭头 */
+  .box::-webkit-scrollbar-button,.log::-webkit-scrollbar-button{display:none !important;width:0;height:0;-webkit-appearance:none}
   .box::-webkit-scrollbar-thumb,.log::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
   .box::-webkit-scrollbar-thumb:hover,.log::-webkit-scrollbar-thumb:hover{background:#bda8dd}
   .box::-webkit-scrollbar-track,.log::-webkit-scrollbar-track{background:transparent}
