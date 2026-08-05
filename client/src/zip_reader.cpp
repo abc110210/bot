@@ -72,24 +72,36 @@ bool ReadExact(HANDLE h, void* buf, size_t n) {
     return true;
 }
 
-// 逐层创建目录（已存在则忽略）
+// 逐层创建目录（已存在则忽略）。支持带 `\\?\` 前缀的长路径：
+// 前缀部分（\\?\ 或 \\?\UNC\）不当作分隔符拆分，从其后开始逐级 CreateDirectoryW。
 bool EnsureDirExists(const std::wstring& dir) {
-    std::wstring cur;
-    for (size_t i = 0; i < dir.size(); ++i) {
+    size_t prefixLen = 0;
+    if (dir.size() >= 4 && dir[0] == L'\\' && dir[1] == L'\\' &&
+        dir[2] == L'?' && dir[3] == L'\\') {
+        prefixLen = 4;
+    } else if (dir.size() >= 8 && dir.compare(0, 8, L"\\\\?\\UNC\\") == 0) {
+        prefixLen = 8;
+    }
+
+    std::wstring acc;
+    for (size_t i = prefixLen; i < dir.size(); ++i) {
         const wchar_t c = dir[i];
         if (c == L'\\' || c == L'/') {
-            if (!cur.empty() && cur.back() != L'\\' && cur.back() != L'/') {
-                const std::wstring part = cur + OBFW("XA==");
-                if (!::CreateDirectoryW(part.c_str(), nullptr)) {
+            if (!acc.empty()) {
+                const std::wstring full = dir.substr(0, prefixLen) + acc;
+                if (!::CreateDirectoryW(full.c_str(), nullptr)) {
                     const DWORD e = ::GetLastError();
                     if (e != ERROR_ALREADY_EXISTS) return false;
                 }
+                acc.clear();
             }
+        } else {
+            acc.push_back(c);
         }
-        cur.push_back(c);
     }
-    if (!cur.empty() && cur.back() != L'\\' && cur.back() != L'/') {
-        if (!::CreateDirectoryW(cur.c_str(), nullptr)) {
+    if (!acc.empty()) {
+        const std::wstring full = dir.substr(0, prefixLen) + acc;
+        if (!::CreateDirectoryW(full.c_str(), nullptr)) {
             const DWORD e = ::GetLastError();
             if (e != ERROR_ALREADY_EXISTS) return false;
         }
@@ -103,7 +115,7 @@ bool CreateParentDirs(const std::wstring& filePath) {
     while (!d.empty() && (d.back() == L'\\' || d.back() == L'/')) d.pop_back();
     const size_t slash = d.find_last_of(OBFW("XC8="));
     if (slash == std::wstring::npos) return true;
-    return EnsureDirExists(d.substr(0, slash));
+    return EnsureDirExists(util::LongPath(d.substr(0, slash)));
 }
 
 // 把内部条目名映射到目标目录；剥离前缀 "saves/" 或 "saves\\"
@@ -188,7 +200,7 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
                                   const std::string& password) {
     ExtractResult res;
 
-    HANDLE h = ::CreateFileW(zipPath.c_str(), GENERIC_READ,
+    HANDLE h = ::CreateFileW(util::LongPath(zipPath).c_str(), GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              nullptr, OPEN_EXISTING,
                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
@@ -314,9 +326,14 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
                 res.error = OBFW("6Kej5Y6L5aSx6LSl77yI5pWw5o2u5Y+v6IO95bey5o2f5Z2P77yJ77ya") + util::Utf8ToWide(e.nameUtf8);
                 closeFile(); return res;
             }
+            DWORD werr = 0;
             if (!CreateParentDirs(outPath) ||
-                !util::WriteWholeFile(outPath, plain.data(), plain.size())) {
-                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath;
+                !util::WriteWholeFile(outPath, plain.data(), plain.size(), &werr)) {
+                wchar_t lenBuf[40]{};
+                ::swprintf(lenBuf, 40, L" [路径长度=%llu]", (unsigned long long)outPath.size());
+                res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
+                            L" (err=" + std::to_wstring(werr) + L" " +
+                            util::LastErrorText(werr) + L")" + lenBuf;
                 closeFile(); return res;
             }
             res.writtenBytes += plain.size();
@@ -332,20 +349,27 @@ ExtractResult ExtractEncryptedZip(const std::wstring& zipPath,
             // CREATE_ALWAYS 会直接失败（err=5 拒绝访问）；且共享模式 0（独占）在文件被
             // 其它进程以共享方式打开时也会失败。这里写前先清掉只读等属性，并放宽共享
             // 模式（允许其它进程读/写/删本文件，对游戏缓存数据安全），从根上避免
-            // 「解压写入失败」。仍保留 GetLastError 便于极端情况定位。
-            ::SetFileAttributesW(outPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+            // 「解压写入失败」。2026-08-06 再修：路径走 LongPath 突破 260 上限（长路径是
+            // 「手动能、程序不能」的根因），并把每次失败的 GetLastError 记录到 lastErr。
+            const std::wstring lpOut = util::LongPath(outPath);
+            ::SetFileAttributesW(lpOut.c_str(), FILE_ATTRIBUTE_NORMAL);
             HANDLE out = INVALID_HANDLE_VALUE;
+            DWORD lastErr = 0;
             for (int attempt = 0; attempt < 4 && out == INVALID_HANDLE_VALUE; ++attempt) {
                 if (attempt > 0) ::Sleep(300);   // 瞬时占用（杀毒/索引）等待后重试
-                out = ::CreateFileW(outPath.c_str(), GENERIC_WRITE,
+                out = ::CreateFileW(lpOut.c_str(), GENERIC_WRITE,
                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                     nullptr, CREATE_ALWAYS,
                                     FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+                if (out == INVALID_HANDLE_VALUE) lastErr = ::GetLastError();
             }
             if (out == INVALID_HANDLE_VALUE) {
-                // 5=拒绝访问(权限/只读)，32=被独占占用，112=磁盘满
+                // 5=拒绝访问(权限/只读)，32=被独占占用，112=磁盘满，206=路径超长
+                wchar_t lenBuf[40]{};
+                ::swprintf(lenBuf, 40, L" [路径长度=%llu]", (unsigned long long)outPath.size());
                 res.error = OBFW("5YaZ5YWl5paH5Lu25aSx6LSl77ya") + outPath +
-                            L" (err=" + std::to_wstring(::GetLastError()) + L")";
+                            L" (err=" + std::to_wstring(lastErr) + L" " +
+                            util::LastErrorText(lastErr) + L")" + lenBuf;
                 closeFile(); return res;
             }
 

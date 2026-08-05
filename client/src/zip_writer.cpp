@@ -73,7 +73,7 @@ static void FileTimeToDos(const FILETIME& ft, uint16_t& dosDate, uint16_t& dosTi
 class FileWriter {
 public:
     bool Open(const std::wstring& path) {
-        h_ = ::CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+        h_ = ::CreateFileW(util::LongPath(path).c_str(), GENERIC_WRITE, 0, nullptr,
                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
         return h_ != INVALID_HANDLE_VALUE;
     }
@@ -174,7 +174,10 @@ ScanResult ScanDirectory(const std::wstring& root,
     ScanResult res;
     out.clear();
 
-    if (!util::DirectoryExists(root)) {
+    // 长路径：扫描源头目录若本身很长（深层子目录），FindFirstFileExW 会受 260 限制漏文件。
+    // 统一加 \\?\ 前缀，让扫描也支持长路径（与解压端一致）。
+    const std::wstring rootLP = util::LongPath(root);
+    if (!util::DirectoryExists(rootLP)) {
         res.error = OBFW("55uu5b2V5LiN5a2Y5Zyo77ya") + root;
         return res;
     }
@@ -182,8 +185,8 @@ ScanResult ScanDirectory(const std::wstring& root,
     // 顶层目录项
     if (!rootAliasInZip.empty()) {
         Entry e;
-        e.fullPath  = root;
-        e.nameInZip = rootAliasInZip + OBFW("Lw==");
+            e.fullPath  = rootLP;
+            e.nameInZip = rootAliasInZip + OBFW("Lw==");
         e.isDir     = true;
         WIN32_FILE_ATTRIBUTE_DATA fad{};
         if (::GetFileAttributesExW(root.c_str(), GetFileExInfoStandard, &fad))
@@ -192,7 +195,7 @@ ScanResult ScanDirectory(const std::wstring& root,
         res.dirCount++;
     }
 
-    ScanRecursive(root, rootAliasInZip, out, res, cancel, 0);
+    ScanRecursive(rootLP, rootAliasInZip, out, res, cancel, 0);
 
     if (cancel && cancel->load()) {
         res.error = OBFW("5bey5Y+W5raI");
@@ -229,7 +232,7 @@ static bool ReadAll(const std::wstring& path, std::vector<uint8_t>& buf) {
 static bool ComputeCrcStreaming(const std::wstring& path, uint32_t& crcOut,
                                 unsigned long long& sizeOut,
                                 const std::atomic<bool>* cancel) {
-    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_READ,
+    HANDLE h = ::CreateFileW(util::LongPath(path).c_str(), GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              nullptr, OPEN_EXISTING,
                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
@@ -411,7 +414,7 @@ PackResult CreateEncryptedZip(const std::wstring& outPath,
             }
             done += realSize;
         } else {
-            HANDLE h = ::CreateFileW(e.fullPath.c_str(), GENERIC_READ,
+            HANDLE h = ::CreateFileW(util::LongPath(e.fullPath).c_str(), GENERIC_READ,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                      nullptr, OPEN_EXISTING,
                                      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);

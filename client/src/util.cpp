@@ -135,10 +135,30 @@ std::wstring NormalizePath(const std::wstring& path) {
     return p;
 }
 
+std::wstring LongPath(const std::wstring& path) {
+    if (path.empty()) return path;
+    // 已带 \\?\ 或 \\?\UNC\ 前缀：原样返回
+    if (path.size() >= 4 && path[0] == L'\\' && path[1] == L'\\' &&
+        path[2] == L'?' && path[3] == L'\\') {
+        return path;
+    }
+    if (path.size() >= 8 && path.compare(0, 8, L"\\\\?\\UNC\\") == 0) return path;
+    // UNC \\server\share -> \\?\UNC\server\share
+    if (path.size() >= 2 && path[0] == L'\\' && path[1] == L'\\') {
+        return L"\\\\?\\UNC\\" + path.substr(2);
+    }
+    // 绝对路径 X:\... -> \\?\X:\...（仅当后面跟分隔符，避免误伤单字母文件名）
+    if (path.size() >= 3 && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) {
+        return L"\\\\?\\" + path;
+    }
+    // 相对路径：保持原样（调用方应保证传绝对路径）
+    return path;
+}
+
 bool ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& out) {
     out.clear();
 
-    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_READ,
+    HANDLE h = ::CreateFileW(util::LongPath(path).c_str(), GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
@@ -171,20 +191,28 @@ bool ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& out) {
     return ok;
 }
 
-bool WriteWholeFile(const std::wstring& path, const void* data, size_t bytes) {
+bool WriteWholeFile(const std::wstring& path, const void* data, size_t bytes, DWORD* outErr) {
     // 2026-08-06 修复：目标文件若带「只读」属性（LoL 生成的缓存数据常如此），
     // CREATE_ALWAYS 会直接失败（err=5 拒绝访问）→ 解压报「写入文件失败」。
     // 写前清掉只读等属性，并放宽共享模式（允许其它进程读/写/删本文件）。
     // 另加 3 次重试：文件被瞬时占用（杀毒/索引/短锁）时自动重试自愈。
-    ::SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
+    // 2026-08-06 再修：路径走 LongPath 突破 260 上限（长路径是「手动能、程序不能」的根因），
+    // 并把最后失败的 GetLastError 通过 outErr 返回，让上层错误文案带真实系统错误码。
+    const std::wstring lp = util::LongPath(path);
+    ::SetFileAttributesW(lp.c_str(), FILE_ATTRIBUTE_NORMAL);
     HANDLE h = INVALID_HANDLE_VALUE;
+    DWORD lastErr = 0;
     for (int attempt = 0; attempt < 4 && h == INVALID_HANDLE_VALUE; ++attempt) {
         if (attempt > 0) ::Sleep(300);   // 瞬时占用（杀毒/索引）等待后重试
-        h = ::CreateFileW(path.c_str(), GENERIC_WRITE,
+        h = ::CreateFileW(lp.c_str(), GENERIC_WRITE,
                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                           nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) lastErr = ::GetLastError();
     }
-    if (h == INVALID_HANDLE_VALUE) return false;
+    if (h == INVALID_HANDLE_VALUE) {
+        if (outErr) *outErr = lastErr;
+        return false;
+    }
 
     const uint8_t* p = (const uint8_t*)data;
     size_t done = 0;

@@ -30,8 +30,17 @@ std::wstring GetExeDir();
 std::wstring GetTempDir();
 std::wstring NormalizePath(const std::wstring& path);
 
+// 把绝对路径转成 `\\?\` 前缀形式，突破 Windows 260 字符（MAX_PATH）限制。
+// 这是「手动解压正常、程序解压报写入失败」的根因之一：解压目标路径
+// （saves + 深层子目录 + 文件名）常超过 260 字符，普通 CreateFileW/CreateDirectoryW
+// 会失败，而 7zip/WinRAR/资源管理器默认走长路径。outErr 方式见 WriteWholeFile。
+// 已带 `\\?\` / `\\?\UNC\` 前缀则原样返回；UNC 路径转为 `\\?\UNC\`；相对路径不动。
+std::wstring LongPath(const std::wstring& path);
+
+// outErr 可选：写文件失败时把最后一次 CreateFileW 的 GetLastError 写入 *outErr，
+// 便于上层在错误文案里带上真实系统错误码（之前 DEFLATE 分支没带，导致一直误判「占用」）。
 bool ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& out);
-bool WriteWholeFile(const std::wstring& path, const void* data, size_t bytes);
+bool WriteWholeFile(const std::wstring& path, const void* data, size_t bytes, DWORD* outErr = nullptr);
 
 // ---- 随机 ----
 // 优先使用 BCryptGenRandom，失败则退回到时间 + 进程信息混合的伪随机
