@@ -67,7 +67,8 @@ std::atomic<bool> g_uploadDone{ false };
 
 std::wstring g_lastResultText;            // 关闭前密码警告用
 std::wstring g_lastDir;                   // 最近一次操作的目录（结果文案用）
-std::wstring g_currentPwd;                 // 页面当前密码框内容（关闭时写入 uploader.ini）
+std::wstring g_currentPwd;                 // 页面「上传密码」框内容（关闭时写入 uploader.ini）
+std::wstring g_currentDlPwd;                // 页面「取回密码」框内容（关闭时写入 uploader.ini）
 std::wstring g_appIconB64;                // 启动期从资源读取的软件图标（base64，供页面头部注入）
 
 inline int S(int v) { return ::MulDiv(v, g_dpi, 96); }
@@ -110,11 +111,13 @@ void PostJson(const std::wstring& json) {
         g_pending.push_back(json);
 }
 
-std::wstring BuildInit(const std::wstring& password = L"") {
+std::wstring BuildInit(const std::wstring& password = L"",
+                       const std::wstring& downloadPassword = L"") {
     // 刻意不下发后端地址：页面日志对用户可见，地址一旦落到界面上就等于公开了服务端。
     std::wstring s = std::wstring(L"{\"type\":\"init\",\"app\":") + JStr(APP_TITLE_W) +
                      OBFW("LCJ2ZXJzaW9uIjoiMS4wLjAi");
     if (!password.empty()) s += OBFW("LCJwYXNzd29yZCI6") + JStr(password);
+    if (!downloadPassword.empty()) s += OBFW("LCJkb3dubG9hZFBhc3N3b3JkIjoi") + JStr(downloadPassword);
     s += OBFW("fQ==");
     return s;
 }
@@ -426,7 +429,7 @@ void HandlePageMessage(const std::wstring& msg) {
 #endif
         // 载入记住的目录与密码，随 init 一并回传，方便重开软件直接下载
         config::AppState st; config::LoadState(st);
-        PostJson(BuildInit(st.password));
+        PostJson(BuildInit(st.password, st.downloadPassword));
         // 把软件图标（base64）推给页面，供头部图标使用
         if (!g_appIconB64.empty()) PostJson(BuildIcon(g_appIconB64));
         // 回填上次记住的 saves 目录（若仍有效）
@@ -434,8 +437,8 @@ void HandlePageMessage(const std::wstring& msg) {
             bool has = lolfind::HasMarker(st.savesDir);
             if (has) g_lastDir = st.savesDir;   // 记住回填的目录，关闭时不会被覆盖成空
             PostJson(BuildDir(st.savesDir, has ? 1 : 2,
-                has ? (OBFW("4oiaIOW3suiusOS9j+S4iuasoeebruW9le+8mg==") + st.savesDir)
-                    : (OBFW("w5cg6K6w5L2P55qE55uu5b2V5bey5aSx5pWI77yM6K+36YeN5paw6YCJ5oup"))));
+                has ? (OBFW("5qCh6aqM6YCa6L+H77yM5bey5om+5YiwIEhhbmJvdCDnm67lvZXjgII="))
+                    : (OBFW("5qCh6aqM5aSx6LSl77yM5pyq5om+5YiwIEhhbmJvdCDnm67lvZXvvIzor7fmiYvliqjpgInmi6njgII="))));
         }
     }
     else if (type == "health") {
@@ -450,8 +453,8 @@ void HandlePageMessage(const std::wstring& msg) {
             bool has = lolfind::HasMarker(p);
             if (has) g_lastDir = p;   // 手动选择的目录也要记住，关闭时写入 ini
             int vs = has ? 1 : 2;
-            std::wstring vt = has ? (L"√ 校验通过，已找到 " MARKER_FILE_W)
-                                  : (L"× 目录中没有 " MARKER_FILE_W L"，不是有效的 saves 目录");
+            std::wstring vt = has ? (OBFW("5qCh6aqM6YCa6L+H77yM5bey5om+5YiwIEhhbmJvdCDnm67lvZXjgII="))
+                                  : (OBFW("5qCh6aqM5aSx6LSl77yM5pyq5om+5YiwIEhhbmJvdCDnm67lvZXvvIzor7fmiYvliqjpgInmi6njgII="));
             PostJson(BuildDir(p, vs, vt));
             PostLog(OBFW("5bey5omL5Yqo6YCJ5oup77ya") + p);
             if (!has) PostLog(L"注意：该目录里没有 " MARKER_FILE_W L"，无法上传");
@@ -478,9 +481,9 @@ void HandlePageMessage(const std::wstring& msg) {
     }
     else if (type == "download") {
         std::wstring dir = util::Utf8ToWide(j->GetStr("dir"));
-        std::wstring pwd = util::Utf8ToWide(j->GetStr("password"));
+        std::wstring dlPwd = util::Utf8ToWide(j->GetStr("dlpassword"));
         g_lastDir = dir;
-        g_currentPwd = pwd;
+        g_currentDlPwd = dlPwd;
         if (dir.empty() || !util::DirectoryExists(dir)) {
             PostJson(BuildDone(false, false, true, false,
                 OBFW("6K+35YWI6YCJ5oup6KaB6Kej5Y6L5Yiw55qEIHNhdmVzIOebruW9lQ=="), L"", OBFW("57y65bCR55uu5b2V"), OBFW("57y65bCR55uu5b2V"), false));
@@ -492,12 +495,12 @@ void HandlePageMessage(const std::wstring& msg) {
                 L"", OBFW("55uu5b2V5peg5pWI"), OBFW("55uu5b2V5peg5pWI"), false));
             return;
         }
-        if (!util::IsValidPassword(pwd)) {
+        if (!util::IsValidDownloadPassword(dlPwd)) {
             PostJson(BuildDone(false, false, true, false,
-                OBFW("6K+35YWI6L6T5YWlIDQtMjQg5L2N5a2X5q+N5oiW5pWw5a2X5a+G56CB"), L"", OBFW("57y65bCR5a+G56CB"), OBFW("57y65bCR5a+G56CB"), false));
+                OBFW("5Y+W5Zue5a+G56CB5qC85byP5LiN5q2j56Gu77yI5bqU5Li6IFNLLSDlvIDlpLTvvIzlhbEgMjMg5L2N77yJ"), L"", OBFW("57y65bCR5a+G56CB"), OBFW("57y65bCR5a+G56CB"), false));
             return;
         }
-        std::thread(DownloadThread, dir, pwd).detach();
+        std::thread(DownloadThread, dir, dlPwd).detach();
     }
     else if (type == "copy") {
         std::wstring text = util::Utf8ToWide(j->GetStr("text"));
@@ -525,8 +528,12 @@ void HandlePageMessage(const std::wstring& msg) {
         if (!pwd.empty()) std::thread(CheckPwdThread, pwd).detach();
     }
     else if (type == "password") {
-        // 页面密码框每次变化都回传，关闭时据此写入 uploader.ini（为空即写空）
+        // 「上传密码」框每次变化都回传，关闭时据此写入 uploader.ini（为空即写空）
         g_currentPwd = util::Utf8ToWide(j->GetStr("password"));
+    }
+    else if (type == "dlpassword") {
+        // 「取回密码」框每次变化都回传，关闭时据此写入 uploader.ini（为空即写空）
+        g_currentDlPwd = util::Utf8ToWide(j->GetStr("dlpassword"));
     }
 }
 
@@ -563,6 +570,9 @@ void HandleOutcome(uploader::Outcome* r) {
         // 以及备份目录、完成时间。对象 Key / 下载链接 / 有效期 不展示——
         // 下载链接在用户凭密码下载时才由服务端按需生成，无需提前给出。
         resultText  = OBFW("5a+G56CB77yaICAgICAgIA==") + r->password + OBFW("DQo=");
+        // 后端随上传返回的「取回密码」（SK- 开头）也要展示出来，方便用户复制分享给朋友取回
+        if (!r->downloadPassword.empty())
+            resultText += OBFW("5Y+W5Zue5a+G56CB77ya") + r->downloadPassword + OBFW("DQo=");
         resultText += OBFW("5Y6L57yp5YyF5aSn5bCP77yaIA==") + util::FormatSize(r->zipBytes) +
                       OBFW("77yI5Y6f5aeLIA==") + util::FormatSize(r->rawBytes) + OBFW("77yM5YWxIA==") +
                       std::to_wstring((unsigned long long)r->fileCount) + OBFW("IOS4quaWh+S7tu+8iQ0K");
@@ -793,13 +803,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         auto* results = (std::vector<lolfind::Candidate>*)lp;
         std::wstring path; int vs = 0; std::wstring vt;
         if (!results || results->empty()) {
-            vs = 2; vt = OBFW("w5cg6Ieq5Yqo5qOA5rWL5pyq5om+5Yiw55uu5b2V77yM6K+35omL5Yqo6YCJ5oup");
+            vs = 2; vt = OBFW("5qCh6aqM5aSx6LSl77yM5pyq5om+5YiwIEhhbmJvdCDnm67lvZXvvIzor7fmiYvliqjpgInmi6njgII=");
         } else {
             path = (*results)[0].savesPath;
             if (!path.empty()) g_lastDir = path;   // 记住扫描到的目录，关闭时写入 ini，避免下次再全盘扫
             vs = lolfind::HasMarker(path) ? 1 : 2;
-            vt = vs == 1 ? (L"√ 校验通过，已找到 " MARKER_FILE_W)
-                         : (OBFW("w5cg6K+l55uu5b2V5pyq6YCa6L+H5qCh6aqM"));
+            vt = vs == 1 ? (OBFW("5qCh6aqM6YCa6L+H77yM5bey5om+5YiwIEhhbmJvdCDnm67lvZXjgII="))
+                         : (OBFW("5qCh6aqM5aSx6LSl77yM5pyq5om+5YiwIEhhbmJvdCDnm67lvZXvvIzor7fmiYvliqjpgInmi6njgII="));
         }
         delete results;
         PostJson(BuildDetectDone(path, vs, vt));
@@ -840,7 +850,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             ::Sleep(200);
         }
         // 关闭时把当前目录与密码写入 uploader.ini 的 [State] 段（密码为空则写空），方便重开直接下载
-        config::SaveState(g_lastDir, g_currentPwd);
+        config::SaveState(g_lastDir, g_currentPwd, g_currentDlPwd);
         if (g_uploadDone.load() && !g_lastResultText.empty()) {
             // 原「密码已自动保存，是否确认退出」确认框已按用户要求移除：直接退出即可。
             (void)g_lastResultText;

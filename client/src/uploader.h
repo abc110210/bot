@@ -20,7 +20,8 @@ struct Outcome {
     bool               isDownload = false;     // true=下载解压流程；false=上传打包流程
     std::wstring       error;
 
-    std::wstring       password;       // 压缩包密码（用户输入）
+    std::wstring       password;       // 压缩包密码（加密存档用的「上传密码」；下载时由服务端随取回凭证返回）
+    std::wstring       downloadPassword; // 后端生成的「取回密码」（SK- 开头，23 位）：上传时由响应带回，下载时由用户输入
     std::wstring       objectKey;      // 对象存储中的 key
     std::wstring       downloadUrl;    // 可直接使用的下载链接
     std::wstring       expireText;     // 下载链接有效期说明

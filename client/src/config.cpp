@@ -54,12 +54,17 @@ void LoadState(AppState& s) {
     if (n > 0) s.savesDir = std::wstring(buf, n);
     n = ::GetPrivateProfileStringW(L"State", L"Password", L"", buf, 2048, ini.c_str());
     if (n > 0) s.password = std::wstring(buf, n);
+    n = ::GetPrivateProfileStringW(L"State", L"DownloadPassword", L"", buf, 2048, ini.c_str());
+    if (n > 0) s.downloadPassword = std::wstring(buf, n);
 }
 
-void SaveState(const std::wstring& savesDir, const std::wstring& password) {
+void SaveState(const std::wstring& savesDir,
+               const std::wstring& password,
+               const std::wstring& downloadPassword) {
     const std::wstring ini = StateIniPath();
     ::WritePrivateProfileStringW(L"State", L"SavesDir", savesDir.c_str(), ini.c_str());
     ::WritePrivateProfileStringW(L"State", L"Password", password.c_str(), ini.c_str());
+    ::WritePrivateProfileStringW(L"State", L"DownloadPassword", downloadPassword.c_str(), ini.c_str());
 }
 
 } // namespace config

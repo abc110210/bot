@@ -267,6 +267,23 @@ bool IsValidPassword(const std::wstring& pwd) {
     return true;
 }
 
+bool IsValidDownloadPassword(const std::wstring& pwd) {
+    // 取回密码格式：SK- 开头 + 20 位字母数字（大小写 + 数字），合计 23 位。
+    // 注意：上传密码规则（4-24 字母数字、不含连字符）天然与取回密码不重叠，
+    // 因此即使不在这里显式拒绝 SK- 开头也能正确区分，但显式校验更稳妥。
+    const size_t n = pwd.size();
+    if (n != 23) return false;
+    if (pwd[0] != L'S' || pwd[1] != L'K' || pwd[2] != L'-') return false;
+    for (size_t i = 3; i < n; ++i) {
+        const wchar_t c = pwd[i];
+        const bool ok = (c >= L'A' && c <= L'Z') ||
+                        (c >= L'a' && c <= L'z') ||
+                        (c >= L'0' && c <= L'9');
+        if (!ok) return false;
+    }
+    return true;
+}
+
 std::wstring GetMachineIp() {
     // 优先取非回环、已连接的 IPv4；失败退回回环/未知
     std::wstring best;

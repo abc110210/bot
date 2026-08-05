@@ -46,14 +46,17 @@ void WriteTemplateIfMissing();
 // 注意：这里把 saves 目录与密码以明文写入 uploader.ini（用户要求的本机便利），
 // 仅用于本机自动填入，非跨设备传输。与后端地址/客户端密钥无关（那些仍编译进 exe）。
 struct AppState {
-    std::wstring savesDir;   // 上次成功操作的 saves 目录
-    std::wstring password;   // 上次成功上传/下载用的密码
+    std::wstring savesDir;        // 上次成功操作的 saves 目录
+    std::wstring password;        // 上次成功上传用的「上传密码」（加密存档用）
+    std::wstring downloadPassword; // 上次成功上传后记住的「取回密码」（SK- 开头）
 };
 
 // 读取 uploader.ini 的 [State] 段。文件或该段不存在时返回空。
 void LoadState(AppState& s);
 
-// 写入 uploader.ini（覆盖 [State] 段的 SavesDir / Password）。
-void SaveState(const std::wstring& savesDir, const std::wstring& password);
+// 写入 uploader.ini（覆盖 [State] 段的 SavesDir / Password / DownloadPassword）。
+void SaveState(const std::wstring& savesDir,
+               const std::wstring& password,
+               const std::wstring& downloadPassword);
 
 } // namespace config

@@ -42,6 +42,8 @@ std::string GenerateRandomPassword(size_t length);
 // ---- 校验 / 网络 ----
 // 密码规则：4-24 位，仅允许字母（A-Z a-z）和数字（0-9）
 bool        IsValidPassword(const std::wstring& pwd);
+// 取回密码规则：SK- 开头 + 20 位字母数字（大小写 + 数字），共 23 位
+bool        IsValidDownloadPassword(const std::wstring& pwd);
 // 获取本机首个非回环 IPv4 地址（用于向后端登记，便于排查）
 std::wstring GetMachineIp();
 

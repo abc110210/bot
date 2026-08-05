@@ -251,6 +251,10 @@ Outcome Run(const std::wstring& savesDir,
     out.objectKey = util::Utf8ToWide(objectKey);
     L(OBFW("5Yet6K+B6I635Y+W5oiQ5Yqf77yM55uu5qCH5a+56LGh77ya") + out.objectKey);
 
+    // 后端随上传凭证一并返回「取回密码」（SK- 开头，23 位）。
+    // 同一上传密码 → 同一取回密码（pw_map 1:1 映射），不会每次上传都变。
+    out.downloadPassword = util::Utf8ToWide(tj->GetStr("download_password"));
+
     // ---------------- 5. 直传七牛 ----------------
     P(580, OBFW("5q2j5Zyo5LiK5Lyg"));
     L(OBFW("5q2j5Zyo5LiK5Lyg5Yiw5a+56LGh5a2Y5YKo77ya") + util::Utf8ToWide(uploadHost));
@@ -375,18 +379,18 @@ Outcome Download(const std::wstring& savesDir,
         out.error = L"该目录里没有找到 " MARKER_FILE_W L"，不是有效的 saves 目录，无法解压";
         return out;
     }
-    if (!util::IsValidPassword(password)) {
-        out.error = OBFW("5a+G56CB5b+F6aG75pivIDQtMjQg5L2N5a2X5q+N5oiW5pWw5a2X");
+    if (!util::IsValidDownloadPassword(password)) {
+        out.error = OBFW("5Y+W5Zue5a+G56CB5qC85byP5LiN5q2j56Gu77yI5bqU5Li6IFNLLSDlvIDlpLTvvIzlhbEgMjMg5L2N77yJ");
         return out;
     }
-    const std::string pw = util::WideToUtf8(password);
-    out.password = password;
+    const std::string dlToken = util::WideToUtf8(password);  // 用户输入的取回密码（SK-），仅用于向后端换取下载链接
+    out.downloadPassword = password;                         // 记录取回密码（结果展示 / 日志用）
     L(OBFW("55uu5qCH55uu5b2V77ya") + savesDir);
 
     // ---------------- 1. 换取下载链接 ----------------
     P(5, OBFW("5q2j5Zyo5o2i5Y+W5LiL6L296ZO+5o6l"));
     L(OBFW("5q2j5Zyo5ZCR5pyN5Yqh5Zmo5p+l6K+i6K+l5a+G56CB5a+55bqU55qE5a2Y5qGjLi4u"));
-    const std::string req = "{\"password\":\"" + json::EscapeString(pw) + "\"}";
+    const std::string req = "{\"password\":\"" + json::EscapeString(dlToken) + "\"}";
     const std::wstring dlUrl = config::BackendBaseUrl + OBFW("L2FwaS9kb3dubG9hZA==");
     http::Response dr = http::PostJson(dlUrl, req, AuthHeaders(), MakeTimeouts());
     if (!dr.ok || !dr.Is2xx()) {
@@ -400,6 +404,11 @@ Outcome Download(const std::wstring& savesDir,
     }
     const std::string downloadUrl = dj->GetStr("download_url");
     const std::string key = dj->GetStr("key");
+    // 后端随取回凭证一并返回「存档密码」（即加密 zip 用的上传密码）；
+    // 下载者只持有 SK- 取回密码，解密必须用这个后端下发的存档密码，而非 SK- 本身。
+    std::string archPwd = dj->GetStr("password");
+    if (archPwd.empty()) archPwd = dlToken;  // 兼容未返回 password 的老服务端（解密大概率失败，但流程不中断）
+    out.password = util::Utf8ToWide(archPwd);  // 真正用于解密的存档密码
     if (downloadUrl.empty() || key.empty()) {
         out.error = OBFW("5pyN5Yqh5Zmo5pyq6L+U5Zue5pyJ5pWI55qE5LiL6L295L+h5oGv");
         return out;
@@ -458,7 +467,7 @@ Outcome Download(const std::wstring& savesDir,
 
     // ---------------- 3. 解密解压到 savesDir（覆盖）----------------
     P(910, OBFW("5q2j5Zyo6Kej5Y6L"));
-    zipr::ExtractResult ex = zipr::ExtractEncryptedZip(tmpPath, savesDir, pw);
+    zipr::ExtractResult ex = zipr::ExtractEncryptedZip(tmpPath, savesDir, archPwd);
     if (ex.passwordWrong) {
         out.passwordWrong = true;
         out.error = OBFW("5a+G56CB5LiN5q2j56Gu77yM5peg5rOV6Kej5a+G6K+l5Y6L57yp5YyF77yI6K+356Gu6K6k5a+G56CB5piv5ZCm5q2j56Gu77yJ");
