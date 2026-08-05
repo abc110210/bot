@@ -160,15 +160,21 @@
        font:12px/1.65 "Cascadia Mono",Consolas,monospace;padding:11px 13px;resize:none;outline:none;
        -webkit-user-select:text;user-select:text}
   .box:focus{border-color:var(--peri);background:#fff}
-  /* 细的、贴近系统风格的滚动条（仅日志/结果内部） */
-  .box{scrollbar-width:thin;scrollbar-color:#d9cbe8 transparent}
+  /* 细的、贴近系统风格的滚动条（仅日志/结果内部）。
+     关键：用 ::-webkit-scrollbar-button{display:none} 干掉 Chromium/WebView2 默认
+     出现在滚动条上下的「三角形箭头」——那两个箭头在窄滚动条上特别丑，
+     用户明确要去掉。thumb 用细圆角 + 留白内边距，观感干净。 */
+  .box{scrollbar-width:thin;scrollbar-color:#d4c4e6 transparent}
   .box::-webkit-scrollbar{width:8px;height:8px}
-  .box::-webkit-scrollbar-thumb{background:#d9cbe8;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
-  .box::-webkit-scrollbar-thumb:hover{background:#c4b2e0}
+  .box::-webkit-scrollbar-button{display:none;width:0;height:0}   /* 去掉上下三角箭头 */
+  .box::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+  .box::-webkit-scrollbar-thumb:hover{background:#bda8dd}
   .box::-webkit-scrollbar-track{background:transparent}
   /* 日志区是唯一可伸缩的区域：正常窗口高度下约 5~7 行，窗口被压矮时优先收缩它 */
-  .log{flex:1 1 auto;min-height:0;height:80px;overflow:auto;white-space:pre-wrap}
-  .result{flex:none;min-height:52px;height:auto;max-height:90px;overflow:auto;
+  .log{flex:1 1 auto;min-height:0;height:96px;overflow:auto;white-space:pre-wrap}
+  /* 结果框：典型「请记好以下信息 + 上传密码 + 取回密码」3 行约 63px，
+     把 max-height 放宽到 120px，正常情况下绝不出现滚动条；仅极长内容才滚动（且已无箭头）。 */
+  .result{flex:none;min-height:52px;height:auto;max-height:120px;overflow:auto;
           border:none;border-radius:0;background:transparent;width:100%}
 
   .footer{flex:none;margin-top:8px;font-size:11.5px;color:var(--ink-faint);line-height:1.6;position:relative;z-index:1}
@@ -356,6 +362,11 @@
       case 'done':  showDone(m); break;
       case 'icon':
         if(m.data){ const img=$('appIcon'); img.src='data:image/png;base64,'+m.data; img.style.display='block'; $('markText').style.display='none'; }
+        break;
+      case 'dlpwd':
+        // 上传成功后 native 回填「取回密码」框：让上传者看到/复制自己的取回码，
+        // 并随 input 事件写回 config（关闭时 DownloadPassword 不再为空）。
+        if(m.value){ $('dlpwd').value = m.value; $('dlpwd').dispatchEvent(new Event('input')); }
         break;
       case 'passwordChecked':
         // 只处理「随机生成密码」的查重回调；手动输入密码不做任何拦截
