@@ -332,23 +332,50 @@ Outcome Run(const std::wstring& savesDir,
     }
 
     const std::wstring reportUrl = config::BackendBaseUrl + OBFW("L2FwaS9yZXBvcnQ=");
-    http::Response rr = http::PostJson(reportUrl, repJson, AuthHeaders(), MakeTimeouts());
 
-    if (rr.ok && rr.Is2xx()) {
-        auto rj = json::Parse(rr.body);
-        if (rj && rj->IsObject()) {
-            out.downloadUrl = util::Utf8ToWide(rj->GetStr("download_url"));
-            const long long expires = rj->GetInt("expires_in", 0);
-            if (expires > 0) {
-                wchar_t buf[96]{};
-                ::swprintf(buf, 96, OBFW("5LiL6L296ZO+5o6l5pyJ5pWI5pyf57qmICVsbGQg5bCP5pe2"), expires / 3600);
-                out.expireText = buf;
-            }
+    // 报告用更短的超时（recv 20s），且失败自动重试 3 次（间隔 1s/2s）。
+    // 文件已经上传到七牛，唯一的缺口就是服务端登记——0x00002EE2 这类瞬时网络/CF Tunnel 错误重试通常能救回 SK-；
+    // 最坏情况总等待上限约 63s（旧版单次 120s 直接放弃，文件变孤儿，用户干等 2 分钟才看到失败）。
+    http::Timeouts repTm; repTm.connectMs = 15000; repTm.sendMs = 30000; repTm.recvMs = 20000;
+
+    http::Response rr;
+    bool reportOk = false;
+    std::wstring lastErr;
+    for (int attempt = 1; attempt <= 3 && !Canceled(); ++attempt) {
+        if (attempt > 1) {
+            L(std::wstring(L"服务器登记失败，正在重试 (") + std::to_wstring(attempt-1) + L"/3)...");
+            ::Sleep(attempt == 2 ? 1000 : 2000);
+            if (Canceled()) break;
         }
-        L(OBFW("5bey5Zyo5pyN5Yqh5Zmo55m76K6w77yM5a+G56CB5bey5ZCM5q2l5L+d5a2Y"));
-    } else {
-        // 登记失败不算致命错误——文件已经上传成功，密码在界面上也拿得到
-        L(OBFW("5o+Q56S677ya5pyN5Yqh5Zmo55m76K6w5aSx6LSl77yI") + PrettyHttpError(rr, L"") + OBFW("77yJ77yM5L2G5paH5Lu25bey5LiK5Lyg5oiQ5Yqf77yM6K+35Yqh5b+F6Ieq6KGM5L+d5a2Y5LiL5pa55a+G56CB"));
+        rr = http::PostJson(reportUrl, repJson, AuthHeaders(), repTm);
+        if (rr.ok && rr.Is2xx()) {
+            auto rj = json::Parse(rr.body);
+            if (rj && rj->IsObject()) {
+                out.downloadUrl = util::Utf8ToWide(rj->GetStr("download_url"));
+                const long long expires = rj->GetInt("expires_in", 0);
+                if (expires > 0) {
+                    wchar_t buf[96]{};
+                    ::swprintf(buf, 96, OBFW("5LiL6L296ZO+5o6l5pyJ5pWI5pyf57qmICVsbGQg5bCP5pe2"), expires / 3600);
+                    out.expireText = buf;
+                }
+                // 顺手把服务端在报告响应里返回的 download_password 取出来——
+                // upload-token 对全新密码不一定带 SK-（服务端只在 handle_report 才生成），
+                // 漏掉这一步即使报告成功也会显示「没 SK-」，看起来跟报告失败一样。
+                const std::string dl = rj->GetStr("download_password");
+                if (!dl.empty()) out.downloadPassword = util::Utf8ToWide(dl);
+            }
+            L(OBFW("5bey5Zyo5pyN5Yqh5Zmo55m76K6w77yM5a+G56CB5bey5ZCM5q2l5L+d5a2Y"));
+            reportOk = true;
+            break;
+        }
+        lastErr = PrettyHttpError(rr, L"");
+    }
+
+    if (!reportOk && !Canceled()) {
+        // 3 次都失败：文件已在七牛但服务端没登记，存档已成「孤儿」，无法通过软件正常取回。
+        // 提示用户密码仍可看到、并联系管理员处理（同一上传密码重新上传只能再生成一个新 key/新孤儿，
+        // 救不回原始文件）。
+        L(OBFW("5o+Q56S677ya5pyN5Yqh5Zmo55m76K6w5aSx6LSl77yI") + lastErr + OBFW("77yJ77yM5L2G5paH5Lu25bey5LiK5Lyg5oiQ5Yqf77yM6K+35Yqh5b+F6Ieq6KGM5L+d5a2Y5LiL5pa55a+G56CB"));
     }
 
     P(1000, OBFW("5a6M5oiQ"));

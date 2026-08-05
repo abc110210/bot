@@ -576,7 +576,13 @@ void HandleOutcome(uploader::Outcome* r) {
         resultText += OBFW("DQo=");
         // 后端随上传返回的「取回密码」（SK- 开头）也要展示出来，方便用户复制分享给朋友取回
         if (!r->downloadPassword.empty())
-            resultText += OBFW("5Y+W5Zue5a+G56CBOiA=") + r->downloadPassword;         // 取回密码: 
+            resultText += OBFW("5Y+W5Zue5a+G56CBOiA=") + r->downloadPassword;
+        else {
+            // 孤儿存档：文件已上传但服务端登记失败（取回密码为空），结果框必须明确警告，
+            // 不能只丢个上传密码让人误以为正常——否则用户会拿不到取回密码、下载 404。
+            resultText += OBFW("DQo=");
+            resultText += OBFW("4pqgIOitpuWRiu+8muacjeWKoeWZqOeZu+iusOWksei0pe+8jOaWh+S7tuW3suS4iuS8oOS9huacjeWKoeerr+ayoeacieeZu+iusOiusOW9le+8jOWPluWbnuWvhueggeaXoOazleeUn+aIkOOAgeS4i+i9veS8muaPkOekuiA0MDTjgIIK6K+35L+d5a2Y5LiK5pa55LiK5Lyg5a+G56CB5bm26IGU57O7566h55CG5ZGY5L+u5aSN77yb5pqC5pe25LiN6KaB55So5ZCM5LiA5Liq5LiK5Lyg5a+G56CB5YaN5qyh5LiK5Lyg77yI5Lya5YaN5Lqn55Sf5LiA5Liq5Y+W5Zue5LiN5LqG55qE5a2k5YS/5paH5Lu277yJ44CC");
+        }
         resultLabel = OBFW("5LiK5Lyg57uT5p6c77yI6K+35L+d5a2Y5a+G56CB77yJ");          // 上传结果（请保存密码）
         stage = OBFW("5LiK5Lyg5a6M5oiQ");                                           // 上传完成
         copyEnabled = true;
@@ -600,7 +606,8 @@ void HandleOutcome(uploader::Outcome* r) {
 
     if (ok && !canceled && !isDownload) {
         // 已移除自动复制剪贴板：结果展示在「操作结果」框，用户自行点「复制结果」复制
-        PostLog(OBFW("PT09PT0g5LiK5Lyg5oiQ5Yqf77yM6K+356uL5Y2z5L+d5a2Y5LiL5pa55a+G56CBID09PT09"));
+        // 上传成功：运行日志不再打印「===== 上传成功，请立即保存下方密码 =====」（用户要求不显示），
+        // 密码信息只在「操作结果」框展示（见上方上传成功分支）。
         // 「结果已自动复制到剪贴板」提示已移除：结果展示在「操作结果」框，用户自行点「复制结果」复制
     } else if (ok && !canceled && isDownload) {
         PostLog(OBFW("PT09PT0g5LiL6L295bm26Kej5Y6L5a6M5oiQ77yM5paH5Lu25bey6KaG55uW6Iez55uu5qCH55uu5b2VID09PT09"));
