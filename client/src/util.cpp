@@ -172,7 +172,12 @@ bool ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& out) {
 }
 
 bool WriteWholeFile(const std::wstring& path, const void* data, size_t bytes) {
-    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+    // 2026-08-06 修复：目标文件若带「只读」属性（LoL 生成的缓存数据常如此），
+    // CREATE_ALWAYS 会直接失败（err=5 拒绝访问）→ 解压报「写入文件失败」。
+    // 写前清掉只读等属性，并放宽共享模式（允许其它进程读/写/删本文件）。
+    ::SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
+    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
 
