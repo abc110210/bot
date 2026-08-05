@@ -293,7 +293,6 @@ Outcome Run(const std::wstring& savesDir,
             ::Sleep(attempt == 2 ? 1000 : 2000);
             if (Canceled()) break;
         }
-        L(L"[调试] 上传 attempt=" + std::to_wstring(attempt) + L" recvMs=" + std::to_wstring(upTm.recvMs));
         const auto upT0 = ::GetTickCount64();
         ur = http::UploadMultipartFile(
             util::Utf8ToWide(uploadHost),
@@ -306,18 +305,9 @@ Outcome Run(const std::wstring& savesDir,
             upProgress,
             cancel);
         const DWORD upMs = (DWORD)(::GetTickCount64() - upT0);
-        if (!ur.ok) {
-            L(L"[调试] 上传未收到响应 ok=0 status=" + std::to_wstring(ur.status) +
-              L" 耗时=" + std::to_wstring(upMs) + L"ms 错误=" + ur.error);
-            continue;
-        }
-        L(L"[调试] 上传收到响应 ok=1 status=" + std::to_wstring(ur.status) +
-          L" 耗时=" + std::to_wstring(upMs) + L"ms");
+        if (!ur.ok) { continue; }
         if (ur.Is2xx()) { uploadOk = true; break; }
-        // 非 2xx（如 400 NextPart: EOF）：打印响应体前若干字便于排查，然后重试
-        L(L"[调试] 上传返回非 2xx status=" + std::to_wstring(ur.status) + L" 错误=" + ur.error +
-          (ur.body.empty() ? std::wstring()
-                           : (L" 响应体(前200字)=" + util::Utf8ToWide(ur.body.substr(0, 200)))));
+        // 非 2xx：响应体细节保留以便排查（不再打 [调试] 前缀）
     }
 
     if (Canceled()) { out.canceled = true; out.error = OBFW("5bey5Y+W5raI"); return out; }
@@ -381,12 +371,7 @@ Outcome Run(const std::wstring& savesDir,
         const auto repT0 = ::GetTickCount64();
         rr = http::PostJson(reportUrl, repJson, AuthHeaders(), repTm);
         const DWORD repMs = (DWORD)(::GetTickCount64() - repT0);
-        if (!rr.ok) {
-            L(L"[调试] 上报未收到响应 ok=0 status=" + std::to_wstring(rr.status) + L" 耗时=" + std::to_wstring(repMs) + L"ms 错误=" + rr.error);
-            lastErr = PrettyHttpError(rr, L"");
-            continue;
-        }
-        L(L"[调试] 上报收到响应 ok=1 status=" + std::to_wstring(rr.status) + L" 耗时=" + std::to_wstring(repMs) + L"ms");
+        if (!rr.ok) { lastErr = PrettyHttpError(rr, L""); continue; }
         if (rr.Is2xx()) {
             auto rj = json::Parse(rr.body);
             if (rj && rj->IsObject()) {
@@ -397,26 +382,18 @@ Outcome Run(const std::wstring& savesDir,
                     ::swprintf(buf, 96, OBFW("5LiL6L296ZO+5o6l5pyJ5pWI5pyf57qmICVsbGQg5bCP5pe2"), expires / 3600);
                     out.expireText = buf;
                 }
-                // 顺手把服务端在报告响应里返回的 download_password 取出来——
                 // upload-token 对全新密码不一定带 SK-（服务端只在 handle_report 才生成），
                 // 漏掉这一步即使报告成功也会显示「没 SK-」，看起来跟报告失败一样。
                 const std::string dl = rj->GetStr("download_password");
                 if (!dl.empty()) {
                     out.downloadPassword = util::Utf8ToWide(dl);
-                    L(L"[调试] 已收到 download_password=" + out.downloadPassword);
-                } else {
-                    L(L"[调试] ⚠ 响应中无 download_password 字段（服务端没带回来）");
                 }
-                L(L"[调试] 响应体(前200字)=" + util::Utf8ToWide(rr.body.substr(0, 200)));
-            } else {
-                L(L"[调试] ⚠ 响应体不是合法 JSON：" + util::Utf8ToWide(rr.body.substr(0, 200)));
             }
             L(OBFW("5bey5Zyo5pyN5Yqh5Zmo55m76K6w77yM5a+G56CB5bey5ZCM5q2l5L+d5a2Y"));
             reportOk = true;
             break;
         }
         // rr.ok 但非 2xx（如 429/500）：记错误并进入重试
-        L(L"[调试] 上报返回非 2xx status=" + std::to_wstring(rr.status) + L" 错误=" + util::Utf8ToWide(rr.body.substr(0, 200)));
         lastErr = PrettyHttpError(rr, L"");
     }
 
