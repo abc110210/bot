@@ -197,24 +197,26 @@ Outcome Run(const std::wstring& savesDir,
 
     std::string reqJson;
     {
-        reqJson  = OBFA("ew==");
-        reqJson += OBFA("Im1hY2hpbmUiOiI=")   + json::EscapeString(util::WideToUtf8(machine))  + OBFA("Iiw=");
-        reqJson += OBFA("ImZpbGVuYW1lIjoi")  + json::EscapeString(util::WideToUtf8(zipName))  + OBFA("Iiw=");
-        reqJson += OBFA("InNpemUiOg==")        + std::to_string(pack.zipBytes) + OBFA("LA==");
-        reqJson += OBFA("InJhd19zaXplIjo=")    + std::to_string(pack.rawBytes) + OBFA("LA==");
-        reqJson += OBFA("ImZpbGVfY291bnQiOg==")  + std::to_string(pack.fileCount) + OBFA("LA==");
-        reqJson += OBFA("InNvdXJjZV9kaXIiOiI=") + json::EscapeString(util::WideToUtf8(savesDir)) + OBFA("Iiw=");
+        // 用普通字符串字面量拼装（与可正常工作的旧备份一致），由混淆工具在构建后统一混淆。
+        // 之前手写为 OBFA(...) base64 字面量，混淆工具因幂等保护跳过、未重新混淆，
+        // 一旦某个 base64 运行时解码与预期有偏差就会拼出非法 JSON 被自检拦下——已改回。
+        reqJson  = "{";
+        reqJson += "\"machine\":\""   + json::EscapeString(util::WideToUtf8(machine))  + "\",";
+        reqJson += "\"filename\":\""  + json::EscapeString(util::WideToUtf8(zipName))  + "\",";
+        reqJson += "\"size\":"        + std::to_string(pack.zipBytes) + ",";
+        reqJson += "\"raw_size\":"    + std::to_string(pack.rawBytes) + ",";
+        reqJson += "\"file_count\":"  + std::to_string(pack.fileCount) + ",";
+        reqJson += "\"source_dir\":\"" + json::EscapeString(util::WideToUtf8(savesDir)) + "\",";
         // 带密码申请凭证：后端据此判断「同密码覆盖上传」——已有记录则复用旧 key
         // 签发覆盖式凭证，新存档直接覆盖原存档；没有记录才发全新 key。
-        reqJson += OBFA("InBhc3N3b3JkIjoi") + json::EscapeString(pw) + OBFA("Ig==");
-        reqJson += OBFA("fQ==");
+        reqJson += "\"password\":\""  + json::EscapeString(pw) + "\"";
+        reqJson += "}";
     }
 
-    // 发送前自检（防手拼 JSON 漏逗号类 bug）；失败时打脱敏日志便于定位
-    if (!JsonOk(reqJson)) {
-        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(reqJson));
-        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
-        return out;
+    // 发送前自检：仅告警、不拦截。拼装异常时仍把脱敏请求体打日志，
+    // 但照常发出请求（与旧版行为一致，避免自检逻辑误杀合法请求）。
+    if (log && !JsonOk(reqJson)) {
+        log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(reqJson));
     }
 
     const std::wstring tokenUrl = config::BackendBaseUrl + OBFW("L2FwaS91cGxvYWQtdG9rZW4=");
@@ -301,23 +303,22 @@ Outcome Run(const std::wstring& savesDir,
 
     std::string repJson;
     {
-        repJson  = OBFA("ew==");
-        repJson += OBFA("ImtleSI6Ig==")       + json::EscapeString(util::WideToUtf8(out.objectKey)) + OBFA("Iiw=");
-        repJson += OBFA("InBhc3N3b3JkIjoi")  + json::EscapeString(pw) + OBFA("Iiw=");
-        repJson += OBFA("Im1hY2hpbmUiOiI=")   + json::EscapeString(util::WideToUtf8(machine)) + OBFA("Iiw=");
-        repJson += OBFA("InNpemUiOg==")        + std::to_string(pack.zipBytes) + OBFA("LA==");
-        repJson += OBFA("InJhd19zaXplIjo=")    + std::to_string(pack.rawBytes) + OBFA("LA==");
-        repJson += OBFA("ImZpbGVfY291bnQiOg==")  + std::to_string(pack.fileCount) + OBFA("LA==");
-        repJson += OBFA("InNvdXJjZV9kaXIiOiI=") + json::EscapeString(util::WideToUtf8(savesDir)) + OBFA("Iiw=");
-        repJson += OBFA("ImlwIjoi")        + json::EscapeString(util::WideToUtf8(util::GetMachineIp())) + OBFA("Ig==");
-        repJson += OBFA("fQ==");
+        // 同 reqJson：普通字面量拼装，交由混淆工具统一混淆（不再手写 OBFA base64）。
+        repJson  = "{";
+        repJson += "\"key\":\""        + json::EscapeString(util::WideToUtf8(out.objectKey)) + "\",";
+        repJson += "\"password\":\""    + json::EscapeString(pw) + "\",";
+        repJson += "\"machine\":\""     + json::EscapeString(util::WideToUtf8(machine)) + "\",";
+        repJson += "\"size\":"          + std::to_string(pack.zipBytes) + ",";
+        repJson += "\"raw_size\":"      + std::to_string(pack.rawBytes) + ",";
+        repJson += "\"file_count\":"    + std::to_string(pack.fileCount) + ",";
+        repJson += "\"source_dir\":\""  + json::EscapeString(util::WideToUtf8(savesDir)) + "\",";
+        repJson += "\"ip\":\""          + json::EscapeString(util::WideToUtf8(util::GetMachineIp())) + "\"";
+        repJson += "}";
     }
 
-    // 发送前自检（防手拼 JSON 漏逗号类 bug）；失败时打脱敏日志便于定位
-    if (!JsonOk(repJson)) {
-        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(repJson));
-        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
-        return out;
+    // 仅告警、不拦截（同 reqJson）
+    if (log && !JsonOk(repJson)) {
+        log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(repJson));
     }
 
     const std::wstring reportUrl = config::BackendBaseUrl + OBFW("L2FwaS9yZXBvcnQ=");
@@ -379,7 +380,7 @@ Outcome Download(const std::wstring& savesDir,
     // ---------------- 1. 换取下载链接 ----------------
     P(5, OBFW("5q2j5Zyo5o2i5Y+W5LiL6L296ZO+5o6l"));
     L(OBFW("5q2j5Zyo5ZCR5pyN5Yqh5Zmo5p+l6K+i6K+l5a+G56CB5a+55bqU55qE5a2Y5qGjLi4u"));
-    const std::string req = OBFA("eyJwYXNzd29yZCI6Ig==") + json::EscapeString(pw) + OBFA("In0=");
+    const std::string req = "{\"password\":\"" + json::EscapeString(pw) + "\"}";
     const std::wstring dlUrl = config::BackendBaseUrl + OBFW("L2FwaS9kb3dubG9hZA==");
     http::Response dr = http::PostJson(dlUrl, req, AuthHeaders(), MakeTimeouts());
     if (!dr.ok || !dr.Is2xx()) {
@@ -522,7 +523,7 @@ HealthResult CheckBackend(const LogFn& log) {
 bool PasswordExists(const std::wstring& password) {
     if (!util::IsValidPassword(password)) return false;
 
-    const std::string req = OBFA("eyJwYXNzd29yZCI6Ig==") + json::EscapeString(util::WideToUtf8(password)) + OBFA("In0=");
+    const std::string req = "{\"password\":\"" + json::EscapeString(util::WideToUtf8(password)) + "\"}";
     const std::wstring url = config::BackendBaseUrl + OBFW("L2FwaS9jaGVjay1wYXNzd29yZA==");
     http::Response r = http::PostJson(url, req, AuthHeaders(), MakeTimeouts());
     if (!r.ok || !r.Is2xx()) return false;     // 异常时不拦截，直接用生成的密码

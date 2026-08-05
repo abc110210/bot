@@ -418,6 +418,12 @@ void HandlePageMessage(const std::wstring& msg) {
         for (auto& p : g_pending)
             if (g_webview) g_webview->PostWebMessageAsString(p.c_str());
         g_pending.clear();
+        // 启动日志打印构建时间戳（由 CMake 注入 BUILD_TIMESTAMP 宏），
+        // 便于一眼区分当前运行的是哪次构建的 exe——
+        // 排查「到底换没换 exe」的利器：时间戳对不上就是还在跑旧构建。
+#ifdef BUILD_TIMESTAMP
+        PostLog(std::wstring(L"构建时间：") + util::Utf8ToWide(BUILD_TIMESTAMP));
+#endif
         // 载入记住的目录与密码，随 init 一并回传，方便重开软件直接下载
         config::AppState st; config::LoadState(st);
         PostJson(BuildInit(st.password));
