@@ -7,6 +7,15 @@
 
 #pragma comment(lib, "winhttp.lib")
 
+// 部分旧 Windows SDK 的 winhttp.h 没暴露这两个 HTTP 协议协商常量，这里兜底定义。
+// WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL 取值 0x0058，WINHTTP_PROTOCOL_FLAG_HTTP1 = 0x1。
+#ifndef WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL
+#define WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL 0x0058
+#endif
+#ifndef WINHTTP_PROTOCOL_FLAG_HTTP1
+#define WINHTTP_PROTOCOL_FLAG_HTTP1 0x00000001
+#endif
+
 namespace http {
 
 // ===========================================================================
@@ -163,6 +172,15 @@ bool OpenChain(const UrlParts& parts,
     // 本应用请求频率极低，新建连接的握手开销可忽略。
     DWORD disableFeature = WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_KEEP_ALIVE;
     ::WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeature, sizeof(disableFeature));
+
+    // 强制走 HTTP/1.1：CF 隧道「客户端↔边缘」常为 HTTP/2，而上面禁用了 keep-alive、
+    // 发了 Connection: close。HTTP/2 下 Connection 头无意义、响应流不会因 close 结束，
+    // 会和 WinHTTP 的收包循环冲突，偶发丢掉前几个响应——表现就是 /api/report 收不到、
+    // 20s 超时后重试、再超时（重复登记）。退回 HTTP/1.1 后每条请求独立连接，响应随连接
+    // 关闭自然结束，收包稳定。实测 upload-token 能收到、report 收不到，正是这种「同隧道
+    // 前几个流被丢」的特征（第 3 次撞 429 反而秒回，因为那是独立的新流）。
+    DWORD httpProto = WINHTTP_PROTOCOL_FLAG_HTTP1;
+    ::WinHttpSetOption(request, WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL, &httpProto, sizeof(httpProto));
 
     return true;
 }
