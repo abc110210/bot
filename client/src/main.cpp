@@ -600,6 +600,20 @@ void HandleOutcome(uploader::Outcome* r) {
         resultText = OBFW("5LiK5Lyg5a6M5oiQ77yM6K+35L+d5L+d5a2Y5a+G56CB");   // 上传完成，请保存密码
     }
 
+    // 临时诊断（04:25 反馈结果框空）：上传完成时打印 resultText 的实际长度与首尾，
+    // 便于区分「C++ 逻辑没填（size=0）vs JS 端没显示（size>0）」。下次定位后可删。
+    if (ok && !canceled && !isDownload) {
+        std::wstring head = resultText.size() > 40 ? resultText.substr(0, 40) + L"..." : resultText;
+        std::wstring tail = resultText.size() > 40 ? resultText.substr(resultText.size() - 20) : L"";
+        PostLog(L"[诊断] HandleOutcome resultText.size=" + std::to_wstring(resultText.size()) +
+                L" ok=" + (r->ok?L"true":L"false") +
+                L" canceled=" + (r->canceled?L"true":L"false") +
+                L" isDownload=" + (r->isDownload?L"true":L"false") +
+                L" pwd.size=" + std::to_wstring(r->password.size()) +
+                L" dlpwd.size=" + std::to_wstring(r->downloadPassword.size()) +
+                L" 头=" + head + L" 尾=" + tail);
+    }
+
     if (ok && !canceled) {
         g_lastResultText = resultText; g_uploadDone.store(true);
     }
