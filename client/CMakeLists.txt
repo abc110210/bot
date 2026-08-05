@@ -150,6 +150,17 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# 构建时间戳：注入到 exe，启动日志打印，便于一眼区分「到底跑的是哪个 exe」
+#   专门解决反复出现的「用户以为换了新 exe、其实还在跑旧构建」排查死循环。
+#   格式 ISO-8601 UTC，全 ASCII、无空格/无中文，避开 RC 编译器与 cl 的编码坑。
+#   取值在 CMake 配置阶段生成（≈构建开始时刻）。
+# ---------------------------------------------------------------------------
+string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    BUILD_TIMESTAMP="${BUILD_TIMESTAMP}"
+)
+
+# ---------------------------------------------------------------------------
 # 系统库（全部是 Windows 自带的，不需要额外分发）
 # ---------------------------------------------------------------------------
 target_link_libraries(${PROJECT_NAME} PRIVATE
