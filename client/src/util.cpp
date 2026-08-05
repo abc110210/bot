@@ -499,19 +499,23 @@ static void DecodeB64(const char* s, std::string& out) {
     }
 }
 
-// 旋转缓冲，避免同一表达式里连续 OBFW/OBFA 互相覆盖
-static thread_local std::string  g_bufA[8];
-static thread_local std::wstring g_bufW[8];
+// 旋转缓冲，避免同一表达式里连续 OBFW/OBFA 互相覆盖。
+// 2026-08-06 关键：槽数从 8 扩到 32——BuildDone 连续 ~26 次 obf 调用会覆盖 8 槽导致
+// JSON 字段错位/重复/缺失（槽 0 第 1 次 WBool=true 被第 9 次 OBFW 覆盖）。32 槽足够
+// 任何长 + 链（且 `+` 求值时立即复制当前指针到临时 wstring，槽覆盖后复制的内容已在
+// 临时对象里，不影响最终结果——前提是当前指针被读时还没被覆盖）。
+static thread_local std::string  g_bufA[32];
+static thread_local std::wstring g_bufW[32];
 static thread_local unsigned     g_idx = 0;
 
 const char* a(const char* b64) {
-    std::string& buf = g_bufA[(g_idx++) & 7];
+    std::string& buf = g_bufA[(g_idx++) & 31];
     DecodeB64(b64, buf);
     return buf.c_str();
 }
 
 const wchar_t* w(const char* b64) {
-    std::wstring& buf = g_bufW[(g_idx++) & 7];
+    std::wstring& buf = g_bufW[(g_idx++) & 31];
     std::string bytes;
     DecodeB64(b64, bytes);
     if (bytes.empty()) { buf.clear(); return buf.c_str(); }
