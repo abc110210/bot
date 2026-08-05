@@ -8,8 +8,8 @@ namespace config {
 // 后端地址（编译期硬编码；端口以部署为准，这里用 20333）
 std::wstring BackendBaseUrl   = BACKEND_BASE_URL_W;
 
-// 客户端密钥（编译期硬编码，与 server.py 的 CLIENT_API_KEY 保持一致）
-std::string  ClientKey        = util::WideToUtf8(CLIENT_API_KEY_W);
+// 客户端密钥（来自 secrets，运行时 OBFW 解码；与 server.py 的 CLIENT_API_KEY 保持一致）
+std::string  ClientKey        = util::WideToUtf8(secrets::client_key());
 
 // 网络超时（毫秒，硬编码）
 int          ConnectTimeoutMs = 15000;
@@ -30,22 +30,20 @@ void WriteTemplateIfMissing() {
     if (util::FileExists(ini)) return;
 
     // 用 UTF-16 LE + BOM 写，保证中文在记事本里正常显示。
-    // 故意不写入任何地址 / 密钥 / 超时 / 体积上限等敏感项，
-    // 这些全部编译进 exe，改它们需要重新编译。
+    // 地址 / 密钥 / 超时 / 体积上限等敏感项不在此模板里，它们全部编译进 exe。
+    // 运行后程序会在末尾追加 [State] 段，记录本机记住的 saves 目录与密码（明文，仅本机便利）。
     std::wstring content;
     content += L"\uFEFF";
     content += L"; " APP_TITLE_W L" 配置文件\r\n";
-    content += L"; 服务器地址、客户端密钥、网络超时、体积上限等都已内置在程序中，\r\n";
-    content += L"; 不在此文件填写。此文件仅作为占位保留。\r\n";
 
     util::WriteWholeFile(ini, content.data(), content.size() * sizeof(wchar_t));
 }
 
 // ---------------------------------------------------------------------------
-// 本地记住的状态：存于独立的 2.ini（与敏感的 uploader.ini 分离）
+// 本地记住的状态：直接写入 uploader.ini 的 [State] 段
 // ---------------------------------------------------------------------------
 static std::wstring StateIniPath() {
-    return util::JoinPath(util::GetExeDir(), L"2.ini");
+    return IniPath();   // uploader.ini 同目录同文件，[State] 段
 }
 
 void LoadState(AppState& s) {
