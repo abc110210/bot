@@ -21,6 +21,14 @@ http::Timeouts MakeTimeouts() {
     return t;
 }
 
+// 发送前自检请求体是否为合法 JSON 对象。
+// 手拼 JSON 曾因字段间漏逗号导致服务端 400（还误以为是版本/网络问题），
+// 这里兜底：拼坏了客户端直接报内部错误，而不是发一个坏请求出去。
+bool JsonOk(const std::string& s) {
+    auto v = json::Parse(s);
+    return v && v->IsObject();
+}
+
 std::vector<http::Header> AuthHeaders() {
     std::vector<http::Header> h;
     h.emplace_back(OBFW("WC1DbGllbnQtS2V5"), util::Utf8ToWide(config::ClientKey));
@@ -188,6 +196,12 @@ Outcome Run(const std::wstring& savesDir,
         reqJson += OBFA("fQ==");
     }
 
+    // 发送前自检（防手拼 JSON 漏逗号类 bug）
+    if (!JsonOk(reqJson)) {
+        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
+        return out;
+    }
+
     const std::wstring tokenUrl = config::BackendBaseUrl + OBFW("L2FwaS91cGxvYWQtdG9rZW4=");
     http::Response tr = http::PostJson(tokenUrl, reqJson, AuthHeaders(), MakeTimeouts());
 
@@ -282,6 +296,12 @@ Outcome Run(const std::wstring& savesDir,
         repJson += OBFA("InNvdXJjZV9kaXIiOiI=") + json::EscapeString(util::WideToUtf8(savesDir)) + OBFA("Iiw=");
         repJson += OBFA("ImlwIjoi")        + json::EscapeString(util::WideToUtf8(util::GetMachineIp())) + OBFA("Ig==");
         repJson += OBFA("fQ==");
+    }
+
+    // 发送前自检（防手拼 JSON 漏逗号类 bug）
+    if (!JsonOk(repJson)) {
+        out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
+        return out;
     }
 
     const std::wstring reportUrl = config::BackendBaseUrl + OBFW("L2FwaS9yZXBvcnQ=");
