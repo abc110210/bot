@@ -499,13 +499,16 @@ Outcome Download(const std::wstring& savesDir,
         L(L"已找到对应存档，对象:" + util::Utf8ToWide(displayKey));
     }
 
-    // ---------------- 2. 下载到临时文件 ----------------
+    // ---------------- 2. 下载到压缩包 ----------------
+    // 2026-08-06 用户要求：压缩包【下载到软件同目录】再解压到指定目录——
+    // 而不是临时目录（临时目录会被系统清理/找不到，用户想亲眼确认 zip 完整）。
+    // 解压后【保留】该 zip（不自动删），用户可自行查看/留档/清理。
     P(20, OBFW("5q2j5Zyo5LiL6L29"));
     const std::wstring stamp  = util::TimestampCompact();
     const std::wstring machine = util::MachineId();
     const std::wstring tmpName = OBFW("aGFuYm90X2RsXw==") + machine + OBFW("Xw==") + stamp + OBFW("LnppcA==");
-    const std::wstring tmpPath = util::JoinPath(util::GetTempDir(), tmpName);
-    ScopedTempFile tmp(tmpPath);
+    const std::wstring tmpPath = util::JoinPath(util::GetExeDir(), tmpName);   // exe 同目录
+    // 不再用 ScopedTempFile（解压后保留 zip，不自动删除）
 
     auto dlProgress = [&](unsigned long long received, unsigned long long total) -> bool {
         if (Canceled()) return false;
