@@ -279,20 +279,50 @@ Outcome Run(const std::wstring& savesDir,
         return true;
     };
 
-    http::Response ur = http::UploadMultipartFile(
-        util::Utf8ToWide(uploadHost),
-        fields,
-        OBFA("ZmlsZQ=="),
-        util::WideToUtf8(zipName),
-        zipPath,
-        {},                 // 七牛直传不需要额外头
-        MakeTimeouts(),
-        upProgress,
-        cancel);
+    // 直传七牛走公网，偶有「包体被截断 → 七牛报 400 invalid multipart / NextPart: EOF」
+    // 这类瞬时网络问题（与 CF Tunnel 无关，是客户端↔up-z2.qiniup.com 这段）。
+    // 与 report 同理加重试：每次都是新连接（已禁用 keep-alive），重试通常能自愈；
+    // 最坏多等几秒，远比「一次截断就整个失败、文件变孤儿、用户干等才知道」好。
+    http::Timeouts upTm; upTm.connectMs = 15000; upTm.sendMs = 60000; upTm.recvMs = 30000;
 
-    if (Canceled() || ur.error == OBFW("5bey5Y+W5raI")) { out.canceled = true; out.error = OBFW("5bey5Y+W5raI"); return out; }
+    http::Response ur;
+    bool uploadOk = false;
+    for (int attempt = 1; attempt <= 3 && !Canceled(); ++attempt) {
+        if (attempt > 1) {
+            L(std::wstring(L"上传到对象存储失败，正在重试 (") + std::to_wstring(attempt - 1) + L"/3)...");
+            ::Sleep(attempt == 2 ? 1000 : 2000);
+            if (Canceled()) break;
+        }
+        L(L"[调试] 上传 attempt=" + std::to_wstring(attempt) + L" recvMs=" + std::to_wstring(upTm.recvMs));
+        const auto upT0 = ::GetTickCount64();
+        ur = http::UploadMultipartFile(
+            util::Utf8ToWide(uploadHost),
+            fields,
+            OBFA("ZmlsZQ=="),
+            util::WideToUtf8(zipName),
+            zipPath,
+            {},                 // 七牛直传不需要额外头
+            upTm,
+            upProgress,
+            cancel);
+        const DWORD upMs = (DWORD)(::GetTickCount64() - upT0);
+        if (!ur.ok) {
+            L(L"[调试] 上传未收到响应 ok=0 status=" + std::to_wstring(ur.status) +
+              L" 耗时=" + std::to_wstring(upMs) + L"ms 错误=" + ur.error);
+            continue;
+        }
+        L(L"[调试] 上传收到响应 ok=1 status=" + std::to_wstring(ur.status) +
+          L" 耗时=" + std::to_wstring(upMs) + L"ms");
+        if (ur.Is2xx()) { uploadOk = true; break; }
+        // 非 2xx（如 400 NextPart: EOF）：打印响应体前若干字便于排查，然后重试
+        L(L"[调试] 上传返回非 2xx status=" + std::to_wstring(ur.status) + L" 错误=" + ur.error +
+          (ur.body.empty() ? std::wstring()
+                           : (L" 响应体(前200字)=" + util::Utf8ToWide(ur.body.substr(0, 200)))));
+    }
 
-    if (!ur.ok || !ur.Is2xx()) {
+    if (Canceled()) { out.canceled = true; out.error = OBFW("5bey5Y+W5raI"); return out; }
+
+    if (!uploadOk) {
         out.error = PrettyHttpError(ur, OBFW("5LiK5Lyg5Yiw5a+56LGh5a2Y5YKo5aSx6LSl"));
         return out;
     }
