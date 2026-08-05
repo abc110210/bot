@@ -29,6 +29,20 @@ bool JsonOk(const std::string& s) {
     return v && v->IsObject();
 }
 
+// 请求体脱敏（密码打码），用于 JsonOk 失败时打日志排查——UI 日志对用户可见，
+// 不能直接把密码打出去。
+std::wstring MaskedJsonForLog(const std::string& s) {
+    std::string m = s;
+    const std::string marker = "\"password\":\"";
+    std::size_t p = m.find(marker);
+    if (p != std::string::npos) {
+        std::size_t q = m.find('"', p + marker.size());
+        if (q != std::string::npos)
+            m.replace(p + marker.size(), q - p - marker.size(), "***");
+    }
+    return util::Utf8ToWide(m);
+}
+
 std::vector<http::Header> AuthHeaders() {
     std::vector<http::Header> h;
     h.emplace_back(OBFW("WC1DbGllbnQtS2V5"), util::Utf8ToWide(config::ClientKey));
@@ -196,8 +210,9 @@ Outcome Run(const std::wstring& savesDir,
         reqJson += OBFA("fQ==");
     }
 
-    // 发送前自检（防手拼 JSON 漏逗号类 bug）
+    // 发送前自检（防手拼 JSON 漏逗号类 bug）；失败时打脱敏日志便于定位
     if (!JsonOk(reqJson)) {
+        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(reqJson));
         out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
         return out;
     }
@@ -298,8 +313,9 @@ Outcome Run(const std::wstring& savesDir,
         repJson += OBFA("fQ==");
     }
 
-    // 发送前自检（防手拼 JSON 漏逗号类 bug）
+    // 发送前自检（防手拼 JSON 漏逗号类 bug）；失败时打脱敏日志便于定位
     if (!JsonOk(repJson)) {
+        if (log) log(OBFW("6K+35rGC5L2T5YaF5a6577ya") + MaskedJsonForLog(repJson));
         out.error = OBFW("5a6i5oi356uv5YaF6YOo6ZSZ6K+v77ya55Sf5oiQ55qE6K+35rGC5L2T5LiN5ZCI5rOV77yM6K+36YeN6K+V");
         return out;
     }
