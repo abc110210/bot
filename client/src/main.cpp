@@ -961,9 +961,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
     }
 
     // 期望的客户区尺寸（逻辑像素，S() 按 DPI 放大）。
-    // 高度给到 800：页面内容（连接条 + 目录 + 密码 + 双按钮 + 进度 + 5 行日志 + 结果区 + 页脚）
-    // 大约需要 700px，留一点余量，避免下半部被挤压后互相重叠。
-    RECT wr{ 0, 0, S(760), S(800) };
+    // 高度给到 840（与 HTML 里 .window 的预览高度一致）：页面内容（连接条 + 目录 + 密码 + 双按钮 + 进度 + 5 行日志 + 结果区 + 页脚）
+    // 大约需要 700px，840 给足余量，避免下半部被挤压后互相重叠。最小高度仍由 WM_GETMINMAXINFO 限制为 720（小屏可拖小、不超屏）。
+    RECT wr{ 0, 0, S(760), S(840) };
     ::AdjustWindowRectEx(&wr, WS_POPUP | WS_SYSMENU, FALSE, 0);
 
     int winW = wr.right - wr.left;
