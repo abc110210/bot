@@ -75,52 +75,73 @@ bool ReadExact(HANDLE h, void* buf, size_t n) {
 // 逐层创建目录（已存在则忽略）。支持带 `\\?\` 前缀的长路径：
 // 前缀部分（\\?\ 或 \\?\UNC\）不当作分隔符拆分，从其后开始逐级 CreateDirectoryW。
 bool EnsureDirExists(const std::wstring& dir) {
-    // 长路径前缀处理：确定「根前缀」长度，使后续节点拼出完整有效路径。
-    //   \\?\X:\  -> 7（含盘符及末尾反斜杠，如 \\?\D:\；后续 full = \\?\D:\ + acc 才合法）
-    //   \\?\UNC\ -> 8（UNC；本地解压不用，按整体前缀处理）
-    //   普通绝对路径 -> 0（如 D:\...，卷根 D: 由下方 isDriveRoot 跳过）
-    // 2026-08-06 修复回归（两次）：
-    //   ① 第一版把前缀算成 4（\\?\），再用 isDriveRoot 跳过 acc 里的 "D:" → 拼成 "\\?\LOL"（丢盘符）
-    //   ② 第二版算成 6（\\?\D:），漏了 D: 后的反斜杠 → 拼成 "\\?\D:LOL"（无效路径）
-    //   两者都使 CreateDirectoryW 失败 → CreateParentDirs 误返回 false → 解压报「创建目录失败」
-    //   （用户在 saves 已存在时仍失败，正是首个中间节点 \\?\D:LOL 无效所致）。
-    //   正确做法：把 "\\?\D:\" 整体（7 字符，含盘符与末尾反斜杠）当前缀。
-    size_t prefixLen = 0;
+    // 2026-08-06 防回归：早期版本用 prefixLen+substr 拼路径，一旦 \\?\ 前缀没生效
+    // （prefixLen=0），卷根 D: 被跳过，后面组件变成相对路径，落到当前工作目录，
+    // 在 D 盘根并列建出 DJ暴力版本/league of legends 这类空文件夹（用户实测 08:27）。
+    // 本版做法：先把「前缀」(\\?\X:\ 或 \\?\UNC\server\share\ 或 X:\ 或 \\server\share\) 摘出来，
+    // 后续每个待建目录都拼回 prefix → 【永远是绝对路径】，绝不可能产生相对路径。
+    if (dir.empty()) return true;
+
+    std::wstring prefix;  // 前缀（含末尾分隔符），如 "\\?\D:\"
+    std::wstring body;    // 去掉前缀后的剩余部分
+
     if (dir.size() >= 4 && dir[0] == L'\\' && dir[1] == L'\\' &&
         dir[2] == L'?' && dir[3] == L'\\') {
-        if (dir.size() >= 7 && dir[5] == L':' && dir[6] == L'\\') prefixLen = 7;   // \\?\X:\
-        else prefixLen = 4;
-    } else if (dir.size() >= 8 && dir.compare(0, 8, L"\\\\?\\UNC\\") == 0) {
-        prefixLen = 8;
+        // 长路径前缀 \\?\...
+        if (dir.size() >= 8 && dir.compare(0, 8, L"\\\\?\\UNC\\") == 0) {
+            size_t p = dir.find(L'\\', 8);
+            if (p == std::wstring::npos) return true;
+            size_t q = dir.find(L'\\', p + 1);
+            if (q == std::wstring::npos) return true;
+            prefix = dir.substr(0, q + 1);          // \\?\UNC\server\share\
+            body = dir.substr(q + 1);
+        } else if (dir.size() >= 7 && dir[5] == L':' && dir[6] == L'\\') {
+            prefix = dir.substr(0, 7);              // \\?\X:\
+            body = dir.substr(7);
+        } else if (dir.size() >= 6 && dir[5] == L':') {
+            prefix = dir.substr(0, 6) + L"\\";      // \\?\X: -> \\?\X:\
+            body = dir.substr(6);
+        } else {
+            prefix = dir.substr(0, 4);              // \\?\
+            body = dir.substr(4);
+        }
+    } else if (dir.size() >= 2 && dir[0] == L'\\' && dir[1] == L'\\') {
+        // 普通 UNC \\server\share\...
+        size_t p = dir.find(L'\\', 2);
+        if (p == std::wstring::npos) return true;
+        size_t q = dir.find(L'\\', p + 1);
+        if (q == std::wstring::npos) return true;
+        prefix = dir.substr(0, q + 1);
+        body = dir.substr(q + 1);
+    } else if (dir.size() >= 3 && dir[1] == L':' && (dir[2] == L'\\' || dir[2] == L'/')) {
+        prefix = dir.substr(0, 3);                  // X:\
+        body = dir.substr(3);
+    } else {
+        // 相对路径兜底（调用方应保证传绝对路径）；prefix 为空，full 可能相对
+        prefix = L"";
+        body = dir;
     }
 
-    // 普通绝对路径（无前缀）的卷根 "D:" 也跳过：CreateDirectoryW("D:") 错误码不定，
-    // 不当普通目录处理，避免误判失败。
-    auto isDriveRoot = [](const std::wstring& s) {
-        return s.size() == 2 && s[1] == L':';
-    };
-
-    std::wstring acc;
-    for (size_t i = prefixLen; i < dir.size(); ++i) {
-        const wchar_t c = dir[i];
+    // 逐段拼回 prefix 建目录：full 始终为绝对路径（含盘符或 UNC 根）
+    std::wstring cur;
+    for (size_t i = 0; i < body.size(); ++i) {
+        wchar_t c = body[i];
         if (c == L'\\' || c == L'/') {
-            if (!acc.empty()) {
-                if (!isDriveRoot(acc)) {
-                    const std::wstring full = dir.substr(0, prefixLen) + acc;
-                    if (!::CreateDirectoryW(full.c_str(), nullptr)) {
-                        const DWORD e = ::GetLastError();
-                        if (e != ERROR_ALREADY_EXISTS) return false;
-                    }
+            if (!cur.empty()) {
+                std::wstring full = prefix + cur;
+                if (::CreateDirectoryW(full.c_str(), nullptr) == 0) {
+                    const DWORD e = ::GetLastError();
+                    if (e != ERROR_ALREADY_EXISTS) return false;
                 }
-                acc.clear();
             }
+            cur.push_back(L'\\');
         } else {
-            acc.push_back(c);
+            cur.push_back(c);
         }
     }
-    if (!acc.empty() && !isDriveRoot(acc)) {
-        const std::wstring full = dir.substr(0, prefixLen) + acc;
-        if (!::CreateDirectoryW(full.c_str(), nullptr)) {
+    if (!cur.empty()) {
+        std::wstring full = prefix + cur;
+        if (::CreateDirectoryW(full.c_str(), nullptr) == 0) {
             const DWORD e = ::GetLastError();
             if (e != ERROR_ALREADY_EXISTS) return false;
         }
