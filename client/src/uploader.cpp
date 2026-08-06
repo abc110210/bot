@@ -424,8 +424,11 @@ Outcome Download(const std::wstring& savesDir,
 
     // ---------------- 0. 前置校验 ----------------
     P(0, OBFW("5qOA5p+l55uu5b2V"));
+    // 2026-08-06 设计原则：目标 saves 目录由「自动检测 / 手动选择」得到，必定已存在，
+    // 工具【绝不创建】任何目录（含其祖先）。仅当路径失效（手改 ini / 选完删文件夹）
+    // 时才驳回，提示用户重新检测或手动选择。
     if (savesDir.empty() || !util::DirectoryExists(savesDir)) {
-        out.error = OBFW("55uu5b2V5LiN5a2Y5Zyo77yM6K+35YWI6YCJ5oup6KaB6Kej5Y6L5Yiw55qEIHNhdmVzIOebruW9lQ==");
+        out.error = L"找不到路径，请重新检测或手动选择目录";
         return out;
     }
     if (!lolfind::HasMarker(savesDir)) {
