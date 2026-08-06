@@ -194,15 +194,6 @@ std::wstring BuildDone(bool ok, bool canceled, bool isDownload, bool pwdWrong,
            OBFW("LCJyZXN1bHRMYWJlbCI6") + JSDone(resultLabel) +
            OBFW("LCJzdGFnZSI6") + JSDone(stage) +
            OBFW("LCJjb3B5RW5hYmxlZCI6") + WBool(copyEnabled) + OBFW("fQ==");
-    // 临时诊断（05:14 反馈结果框空）：打印 done JSON 头部 + resultText 头尾。
-    try {
-        std::wstring head = out.size() > 250 ? out.substr(0, 250) : out;
-        std::wstring rth = resultText.size() > 30 ? resultText.substr(0, 30) + L"..." : resultText;
-        std::wstring rtt = resultText.size() > 30 ? resultText.substr(resultText.size() - 20) : L"";
-        PostLog(L"[诊断-done] resultText.size=" + std::to_wstring(resultText.size()) +
-                L" 头=" + rth + L" 尾=" + rtt);
-        PostLog(L"[诊断-done] JSON 头=" + head);
-    } catch (...) {}
     return out;
 }
 
@@ -639,20 +630,6 @@ void HandleOutcome(uploader::Outcome* r) {
     // 防御：理论上上传成功必带结果文案；万一为空（异常路径）也兜底给一句，避免结果框空白。
     if (ok && !canceled && !isDownload && resultText.empty()) {
         resultText = OBFW("5LiK5Lyg5a6M5oiQ77yM6K+35L+d5L+d5a2Y5a+G56CB");   // 上传完成，请保存密码
-    }
-
-    // 临时诊断（04:25 反馈结果框空）：上传完成时打印 resultText 的实际长度与首尾，
-    // 便于区分「C++ 逻辑没填（size=0）vs JS 端没显示（size>0）」。下次定位后可删。
-    if (ok && !canceled && !isDownload) {
-        std::wstring head = resultText.size() > 40 ? resultText.substr(0, 40) + L"..." : resultText;
-        std::wstring tail = resultText.size() > 40 ? resultText.substr(resultText.size() - 20) : L"";
-        PostLog(L"[诊断] HandleOutcome resultText.size=" + std::to_wstring(resultText.size()) +
-                L" ok=" + (r->ok?L"true":L"false") +
-                L" canceled=" + (r->canceled?L"true":L"false") +
-                L" isDownload=" + (r->isDownload?L"true":L"false") +
-                L" pwd.size=" + std::to_wstring(r->password.size()) +
-                L" dlpwd.size=" + std::to_wstring(r->downloadPassword.size()) +
-                L" 头=" + head + L" 尾=" + tail);
     }
 
     if (ok && !canceled) {

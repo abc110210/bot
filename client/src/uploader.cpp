@@ -367,7 +367,6 @@ Outcome Run(const std::wstring& savesDir,
             ::Sleep(attempt == 2 ? 1000 : 2000);
             if (Canceled()) break;
         }
-        L(L"[调试] 上报 attempt=" + std::to_wstring(attempt) + L" recvMs=" + std::to_wstring(repTm.recvMs));
         const auto repT0 = ::GetTickCount64();
         rr = http::PostJson(reportUrl, repJson, AuthHeaders(), repTm);
         const DWORD repMs = (DWORD)(::GetTickCount64() - repT0);
@@ -548,50 +547,6 @@ Outcome Download(const std::wstring& savesDir,
 // ===========================================================================
 // 后端连通性检测：调用 GET /api/health
 // ===========================================================================
-// SK 下发诊断：POST /api/test-sk
-//   服务端不写库、不查七牛、不上传，仅把 download_password 随响应下发，
-//   用来隔离「report 卡死」到底是传输层丢响应，还是 report 处理器内部抛异常。
-//   每次启动的连接检测里顺带调用，结果直接打印到运行日志。
-// ===========================================================================
-std::wstring TestSkDelivery(const LogFn& log) {
-    std::wstring dp;
-    const std::wstring url = config::BackendBaseUrl + OBFW("L2FwaS90ZXN0LXNr"); // /api/test-sk
-    if (log) log(L"[调试] 测试服务端 SK 下发中...");
-
-    // 启动检测用短超时，避免测试端点异常时把启动卡住（report 走的是 20s 那个）。
-    http::Timeouts t;
-    t.connectMs = 15000; t.sendMs = 30000; t.recvMs = 10000;
-
-    const auto t0 = ::GetTickCount64();
-    http::Response r = http::PostJson(url, "{}", AuthHeaders(), t);
-    const DWORD ms = (DWORD)(::GetTickCount64() - t0);
-
-    if (!r.ok) {
-        if (log) log(L"[调试] SK 下发测试失败：未收到响应（疑传输层丢包），耗时 " + std::to_wstring(ms) + L"ms，错误=" + r.error);
-        return dp;
-    }
-    if (log) log(L"[调试] SK 下发测试：收到响应 status=" + std::to_wstring(r.status) + L" 耗时=" + std::to_wstring(ms) + L"ms");
-
-    // 打印响应体片段（download_password 已在响应里，这里展示前 240 字便于核对）
-    std::wstring snippet = util::Utf8ToWide(r.body.substr(0, 240));
-    if (log) log(L"[调试] 响应体(前240字)=" + snippet);
-
-    auto j = json::Parse(r.body);
-    if (j && j->IsObject()) {
-        const std::string d = j->GetStr("download_password");
-        if (!d.empty()) {
-            dp = util::Utf8ToWide(d);
-            if (log) log(L"[调试] ✅ 已收到 download_password=" + dp + L"（服务端能正常下发 SK）");
-        } else {
-            if (log) log(L"[调试] ⚠ 响应中无 download_password 字段（服务端没带回来）");
-        }
-    } else {
-        if (log) log(L"[调试] ⚠ 响应体不是合法 JSON");
-    }
-    return dp;
-}
-
-//   仅做轻量探测，不改任何状态；结果用于启动时的连接提示。
 // ===========================================================================
 HealthResult CheckBackend(const LogFn& log) {
     HealthResult res;
@@ -637,13 +592,6 @@ HealthResult CheckBackend(const LogFn& log) {
     }
 
     if (log) log(res.message);
-
-    // 诊断：连接检测通过后，顺带验证「服务端能否把 download_password 随响应下发」。
-    // 不写库、不上传，仅复刻 report 的收包路径，用来隔离 report 卡死到底是传输层丢响应
-    // 还是 report 处理器内部抛异常。结果直接打印到运行日志。
-    if (res.reachable) {
-        TestSkDelivery(log);
-    }
 
     return res;
 }
