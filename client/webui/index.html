@@ -164,12 +164,14 @@
      关键：用 ::-webkit-scrollbar-button{display:none} 干掉 Chromium/WebView2 默认
      出现在滚动条上下的「三角形箭头」——那两个箭头在窄滚动条上特别丑，
      用户明确要去掉。thumb 用细圆角 + 留白内边距，观感干净。
-     选择器同时包含 .box（含 .result）和独立的 .log——之前只对 .box 生效，.log
-     的滚动条没被处理，所以截图里运行日志还显示着上下三角。
-     2026-08-06 加强制：加 !important + -webkit-appearance: none（WebView2/新版
-     Chromium 对 ::-webkit-scrollbar-button 默认隐藏有兼容性差异，必须显式 +!important）。 */
+     选择器同时包含 .box（含 .result）和独立的 .log。
+     2026-08-06 深究：WebView2 在 Windows 默认渲染用【系统滚动条】，::-webkit-scrollbar
+     伪元素在系统模式下不生效；必须在 ::-webkit-scrollbar 顶层加 -webkit-appearance:none
+     强制走 Chromium custom 渲染，::-webkit-scrollbar-button 的 display:none 才能生效。
+     05:51 的 !important + appearance:none 单独加在 button 上还不够——必须整个
+     滚动条都 custom 渲染。 */
   .box,.log{scrollbar-width:thin;scrollbar-color:#d4c4e6 transparent}
-  .box::-webkit-scrollbar,.log::-webkit-scrollbar{width:8px;height:8px}
+  .box::-webkit-scrollbar,.log::-webkit-scrollbar{width:8px;height:8px;-webkit-appearance:none}
   .box::-webkit-scrollbar-button,.log::-webkit-scrollbar-button{display:none !important;width:0;height:0;-webkit-appearance:none}
   .box::-webkit-scrollbar-thumb,.log::-webkit-scrollbar-thumb{background:#d4c4e6;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
   .box::-webkit-scrollbar-thumb:hover,.log::-webkit-scrollbar-thumb:hover{background:#bda8dd}
@@ -476,8 +478,9 @@
       // 非 sk 前缀（如纯数字 / 只输入了单个 s）：不补全前缀，仅去掉误输入的连字符，交给下方提示「必须以 SK- 开头」
       v=v.replace(/-/g,'');
     }
-    // 取回密码大小写不敏感：整体规范为大写再回传/存储（服务端按大写比对），输入小写也能被识别
-    v=v.toUpperCase();
+    // 取回密码大小写不敏感由服务端 .upper() 比对保证，客户端不再强制转大写。
+    // 否则输入框会被硬转成全大写，与结果框回填的真实 SK（混合大小写）割裂，
+    // 让用户误以为"密码被改大小写"。保留原始大小写即可，服务端照常匹配。
     e.target.value=v;
     send({type:'dlpassword', dlpassword:v});
     updateDlHint(); refresh();
